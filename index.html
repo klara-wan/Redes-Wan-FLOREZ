@@ -188,6 +188,29 @@
   .section-gap{margin-top:22px;}
   ::-webkit-scrollbar{width:8px; height:8px;}
   ::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+
+  /* Agente IA */
+  .agent-badge{
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px;
+    color:var(--cyan); background:var(--cyan-dim); border:1px solid #0f4a43; padding:3px 9px; border-radius:20px;
+    margin-bottom:16px;
+  }
+  .agent-dot{width:6px; height:6px; border-radius:50%; background:var(--cyan); animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.3;}}
+  .chat-wrap{display:flex; flex-direction:column; height:520px;}
+  .chat-log{flex:1; overflow-y:auto; padding:4px 4px 10px; display:flex; flex-direction:column; gap:12px;}
+  .msg{max-width:78%; padding:11px 14px; border-radius:10px; font-size:13px; line-height:1.55;}
+  .msg-user{align-self:flex-end; background:var(--cyan-dim); border:1px solid #0f4a43; color:var(--text-primary);}
+  .msg-agent{align-self:flex-start; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary);}
+  .msg-agent .mono{color:var(--cyan);}
+  .chat-input-row{display:flex; gap:10px; margin-top:12px;}
+  .chat-input-row input{flex:1;}
+  .suggestions{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;}
+  .suggestion{
+    font-family:var(--mono); font-size:11.5px; color:var(--text-secondary); background:var(--bg-elevated);
+    border:1px solid var(--border); padding:6px 10px; border-radius:6px; cursor:pointer;
+  }
+  .suggestion:hover{border-color:var(--cyan); color:var(--cyan);}
 </style>
 </head>
 <body>
@@ -208,6 +231,7 @@
     <div class="nav-item" data-view="clientes"><span class="nav-num">02</span>Clientes</div>
     <div class="nav-item" data-view="configuracion"><span class="nav-num">03</span>Configuración</div>
     <div class="nav-item" data-view="auditoria"><span class="nav-num">04</span>Auditoría</div>
+    <div class="nav-item" data-view="agente"><span class="nav-num">05</span>Agente IA</div>
   </nav>
 
   <main>
@@ -295,6 +319,28 @@
       <p class="view-desc">Registro de cada cambio realizado por la herramienta: quién, qué y cuándo.</p>
       <div class="panel">
         <div id="audit-table-wrap"><div class="empty">Sin actividad todavía.</div></div>
+      </div>
+    </section>
+
+    <!-- ===================== VISTA: AGENTE IA ===================== -->
+    <section class="view" id="view-agente">
+      <h1>Agente de planeación</h1>
+      <p class="view-desc">Describe lo que necesitas en lenguaje natural y el agente ejecuta la acción sobre el motor de reglas (crear clientes, generar configuración, consultar estado).</p>
+      <div class="agent-badge"><span class="agent-dot"></span>agente-local · basado en reglas · sin conexión externa</div>
+
+      <div class="suggestions">
+        <div class="suggestion" data-cmd="crear cliente Comercial Andina con 45 usuarios, servicios datos y voz">crear cliente con datos y voz</div>
+        <div class="suggestion" data-cmd="estado del pool">estado del pool</div>
+        <div class="suggestion" data-cmd="aplicar configuracion">aplicar configuración al último cliente</div>
+        <div class="suggestion" data-cmd="mostrar topologia">mostrar topología</div>
+      </div>
+
+      <div class="panel chat-wrap">
+        <div class="chat-log" id="chat-log"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ej. crea un cliente Torre Norte con 30 usuarios y servicio de video">
+          <button class="btn-primary" id="chat-send">Enviar</button>
+        </div>
       </div>
     </section>
 
@@ -612,6 +658,106 @@ document.getElementById('btn-apply').addEventListener('click', (e) => {
     btn.disabled = false;
   }, 1600);
 });
+
+/* =========================================================
+   AGENTE IA — parser de intenciones basado en reglas
+   (reemplazar `runAgent()` por una llamada real a la API de
+   Claude cuando este prototipo se conecte a un backend propio)
+   ========================================================= */
+function addChatMessage(role, html){
+  const log = document.getElementById('chat-log');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-agent');
+  div.innerHTML = html;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function detectServices(text){
+  const map = { datos:/datos|internet|lan/i, voz:/voz|voip|telefon/i, video:/video|c[aá]mara|vigilancia/i, iot:/iot|sensor/i };
+  const found = Object.keys(map).filter(k => map[k].test(text));
+  return found.length ? found : ['datos'];
+}
+
+function runAgent(text){
+  const t = text.trim();
+  const lower = t.toLowerCase();
+
+  // Intención: crear cliente
+  const createMatch = t.match(/crear?\s+cliente\s+([a-zA-Zá-úÁ-Ú0-9\s]+?)\s+con\s+(\d+)\s+usuarios?/i);
+  if (createMatch){
+    const name = createMatch[1].trim();
+    const users = parseInt(createMatch[2], 10);
+    const services = detectServices(t);
+    try{
+      const clientIndex = state.nextClientIndex++;
+      const subnet = allocateSubnet(users);
+      const vlans = services.map(s => allocateVlan(s, clientIndex));
+      const client = { id: Date.now(), name, users, services, subnet, vlans };
+      state.clients.push(client);
+      logAudit('CREAR_CLIENTE (agente)', `${name} → ${subnet.cidr}, VLANs: ${vlans.map(v=>v.id).join(',')}`);
+      renderClients();
+      return `Listo. Creé <span class="mono">${name}</span> con ${users} usuarios.<br>
+        Subred asignada: <span class="mono">${subnet.cidr}</span><br>
+        VLANs: ${vlans.map(v=>`<span class="mono">${v.id}</span> (${SERVICE_META[v.service].label})`).join(', ')}<br>
+        Puedes revisarlo en la pestaña <b>Clientes</b> o generar su configuración en <b>Configuración</b>.`;
+    } catch(e){
+      return `No pude crear el cliente: ${e.message}`;
+    }
+  }
+
+  // Intención: estado / resumen del pool
+  if (/estado|resumen|kpi|cu[aá]ntos clientes/i.test(lower)){
+    const used = state.nextSubnetPointer - state.basePool.start;
+    const total = state.basePool.end - state.basePool.start;
+    const pct = ((used/total)*100).toFixed(2);
+    return `Estado actual:<br>
+      · Clientes provisionados: <span class="mono">${state.clients.length}</span><br>
+      · VLANs en uso: <span class="mono">${state.usedVlans.size}</span><br>
+      · Uso del pool 10.0.0.0/16: <span class="mono">${pct}%</span>`;
+  }
+
+  // Intención: mostrar topología
+  if (/topolog[ií]a/i.test(lower)){
+    document.querySelector('.nav-item[data-view="topologia"]').click();
+    return `Te llevé a la vista de <b>Topología</b> — ahí se renderiza el grafo generado desde el modelo actual de clientes.`;
+  }
+
+  // Intención: aplicar configuración
+  if (/aplicar\s+config/i.test(lower)){
+    if (state.clients.length === 0) return `Aún no hay clientes creados para generar configuración.`;
+    const client = state.clients[state.clients.length - 1];
+    document.querySelector('.nav-item[data-view="configuracion"]').click();
+    document.getElementById('cfg-client-select').value = client.id;
+    renderConfigDiff(client);
+    return `Preparé el dry-run de configuración para <span class="mono">${client.name}</span> en la pestaña <b>Configuración</b>. Revísalo y usa "Aprobar y aplicar" cuando estés listo — el agente no aplica cambios sin tu confirmación.`;
+  }
+
+  return `No reconocí esa instrucción todavía. Prueba con algo como:<br>
+    <span class="mono">"crear cliente Torre Norte con 30 usuarios, servicios datos y voz"</span><br>
+    o revisa los comandos sugeridos arriba del chat.`;
+}
+
+document.querySelectorAll('.suggestion').forEach(s => {
+  s.addEventListener('click', () => {
+    document.getElementById('chat-input').value = s.dataset.cmd;
+    sendChat();
+  });
+});
+
+function sendChat(){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  addChatMessage('user', text);
+  input.value = '';
+  setTimeout(() => addChatMessage('agent', runAgent(text)), 350);
+}
+document.getElementById('chat-send').addEventListener('click', sendChat);
+document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+/* mensaje de bienvenida del agente */
+addChatMessage('agent', `Hola, soy el agente de planeación. Puedo crear clientes, calcular subredes y VLANs, generar configuración en dry-run y llevarte a la vista que necesites. Escribe una instrucción o usa una de las sugerencias.`);
 
 /* Init */
 renderClients();
