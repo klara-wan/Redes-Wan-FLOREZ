@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetPlan — Herramienta de Planeación de Infraestructura de Red</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d1218;
+    --bg-panel:#141b23;
+    --bg-elevated:#1a232d;
+    --border:#243040;
+    --border-soft:#1c2733;
+    --text-primary:#e8eef4;
+    --text-secondary:#8fa1b3;
+    --text-dim:#5c6c7c;
+    --cyan:#00d9c0;
+    --cyan-dim:#0a3d38;
+    --amber:#ffb020;
+    --amber-dim:#4a3510;
+    --red:#ff5c5c;
+    --red-dim:#3d1414;
+    --green:#3ddc84;
+    --green-dim:#123222;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --sans:'Inter', -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg);
+    color:var(--text-primary);
+    font-family:var(--sans);
+    font-size:14px;
+    line-height:1.5;
+    background-image:
+      linear-gradient(var(--border-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+    background-size:40px 40px;
+    background-attachment:fixed;
+  }
+  a{color:inherit;}
+
+  /* ---------- Layout ---------- */
+  .app{display:grid; grid-template-columns:220px 1fr; grid-template-rows:56px 1fr; min-height:100vh;}
+  header{
+    grid-column:1/3; grid-row:1;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 22px;
+    background:rgba(13,18,24,0.9);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:10;
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-mark{
+    width:28px; height:28px; border-radius:6px;
+    background:linear-gradient(135deg, var(--cyan), #0a8f80);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-weight:700; font-size:13px; color:#04211c;
+  }
+  .brand-name{font-family:var(--mono); font-weight:600; letter-spacing:0.5px; font-size:15px;}
+  .brand-sub{color:var(--text-dim); font-size:11px; font-family:var(--mono);}
+  .status-pill{
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:12px; color:var(--text-secondary);
+    background:var(--bg-panel); border:1px solid var(--border);
+    padding:6px 12px; border-radius:20px;
+  }
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green);}
+
+  nav{
+    grid-column:1; grid-row:2;
+    border-right:1px solid var(--border);
+    background:rgba(13,18,24,0.6);
+    padding:18px 10px;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .nav-item{
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; border-radius:8px;
+    color:var(--text-secondary); font-size:13.5px; cursor:pointer;
+    border:1px solid transparent;
+    transition:background .15s, color .15s;
+    font-family:var(--sans); font-weight:500;
+  }
+  .nav-item:hover{background:var(--bg-elevated); color:var(--text-primary);}
+  .nav-item.active{background:var(--cyan-dim); color:var(--cyan); border-color:#0f4a43;}
+  .nav-num{font-family:var(--mono); font-size:11px; color:var(--text-dim); width:16px;}
+  .nav-item.active .nav-num{color:var(--cyan);}
+
+  main{grid-column:2; grid-row:2; padding:28px 32px; overflow-x:hidden;}
+  .view{display:none; animation:fadeIn .25s ease;}
+  .view.active{display:block;}
+  @keyframes fadeIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  h1{font-family:var(--mono); font-size:19px; font-weight:600; margin-bottom:4px;}
+  .view-desc{color:var(--text-secondary); font-size:13px; margin-bottom:24px; max-width:640px;}
+
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:10px;
+    padding:20px;
+  }
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px;}
+
+  .kpi{background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; padding:16px;}
+  .kpi-label{font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.6px; font-family:var(--mono);}
+  .kpi-value{font-family:var(--mono); font-size:26px; font-weight:600; margin-top:6px; color:var(--cyan);}
+
+  /* Forms */
+  label{display:block; font-size:12px; color:var(--text-secondary); margin-bottom:5px; margin-top:14px; font-weight:500;}
+  label:first-child{margin-top:0;}
+  input[type=text], input[type=number], select{
+    width:100%; background:var(--bg-elevated); border:1px solid var(--border);
+    color:var(--text-primary); padding:9px 11px; border-radius:7px; font-family:var(--sans); font-size:13.5px;
+    outline:none; transition:border-color .15s;
+  }
+  input:focus, select:focus{border-color:var(--cyan);}
+  .checks{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;}
+  .chk{
+    display:flex; align-items:center; gap:6px; font-size:12.5px;
+    background:var(--bg-elevated); border:1px solid var(--border); padding:6px 10px; border-radius:6px; cursor:pointer;
+    color:var(--text-secondary); user-select:none;
+  }
+  .chk.checked{border-color:var(--cyan); color:var(--cyan); background:var(--cyan-dim);}
+  .chk input{display:none;}
+
+  button{
+    font-family:var(--sans); font-weight:600; font-size:13px; cursor:pointer;
+    border-radius:7px; border:1px solid transparent; padding:10px 16px;
+    transition:filter .15s, transform .1s;
+  }
+  button:active{transform:scale(0.98);}
+  .btn-primary{background:var(--cyan); color:#04211c;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; border-color:var(--border); color:var(--text-secondary);}
+  .btn-ghost:hover{border-color:var(--cyan); color:var(--cyan);}
+  .btn-primary:disabled{opacity:0.5; cursor:not-allowed;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{
+    text-align:left; font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    text-transform:uppercase; letter-spacing:0.5px; padding:9px 10px; border-bottom:1px solid var(--border);
+  }
+  td{padding:11px 10px; border-bottom:1px solid var(--border-soft); color:var(--text-primary);}
+  tr:last-child td{border-bottom:none;}
+  .mono{font-family:var(--mono); font-size:12.5px;}
+  .tag{
+    display:inline-block; padding:2px 8px; border-radius:5px; font-family:var(--mono); font-size:11px;
+    background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-secondary);
+  }
+  .tag.cyan{color:var(--cyan); border-color:#0f4a43; background:var(--cyan-dim);}
+  .tag.amber{color:var(--amber); border-color:#4a3510; background:var(--amber-dim);}
+
+  .empty{
+    text-align:center; padding:40px 20px; color:var(--text-dim); font-size:13px;
+    border:1px dashed var(--border); border-radius:10px;
+  }
+
+  /* Topology */
+  #topo-svg{width:100%; height:420px; background:var(--bg-panel); border:1px solid var(--border); border-radius:10px;}
+  .topo-node-label{fill:var(--text-primary); font-family:var(--mono); font-size:11px;}
+  .topo-node-sub{fill:var(--text-dim); font-family:var(--mono); font-size:9px;}
+  .topo-link{stroke:var(--border); stroke-width:1.5;}
+  .topo-pulse{
+    stroke:var(--cyan); stroke-width:2; stroke-dasharray:6 260; fill:none;
+    animation:flow 3.2s linear infinite;
+    opacity:0.85;
+  }
+  @keyframes flow{ to{ stroke-dashoffset:-266; } }
+
+  /* Config diff */
+  .diff-box{
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px;
+    padding:14px 16px; font-family:var(--mono); font-size:12.5px; line-height:1.7;
+    max-height:340px; overflow-y:auto; white-space:pre-wrap;
+  }
+  .diff-add{color:var(--green); background:var(--green-dim); display:block; padding:1px 6px; border-radius:3px;}
+  .diff-ctx{color:var(--text-dim); display:block; padding:1px 6px;}
+  .progress-row{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; color:var(--text-secondary); margin-top:14px;}
+  .spinner{width:13px; height:13px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--cyan); animation:spin .7s linear infinite;}
+  @keyframes spin{ to{transform:rotate(360deg);} }
+
+  .flex-between{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .section-gap{margin-top:22px;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark">NP</div>
+      <div>
+        <div class="brand-name">NETPLAN</div>
+        <div class="brand-sub">v0.1 — prototipo</div>
+      </div>
+    </div>
+    <div class="status-pill"><span class="dot"></span><span id="status-text">0 clientes activos</span></div>
+  </header>
+
+  <nav>
+    <div class="nav-item active" data-view="topologia"><span class="nav-num">01</span>Topología</div>
+    <div class="nav-item" data-view="clientes"><span class="nav-num">02</span>Clientes</div>
+    <div class="nav-item" data-view="configuracion"><span class="nav-num">03</span>Configuración</div>
+    <div class="nav-item" data-view="auditoria"><span class="nav-num">04</span>Auditoría</div>
+  </nav>
+
+  <main>
+
+    <!-- ===================== VISTA: TOPOLOGÍA ===================== -->
+    <section class="view active" id="view-topologia">
+      <h1>Topología de red</h1>
+      <p class="view-desc">Vista generada automáticamente a partir del plan de clientes, sitios y enlaces activos. Los pulsos representan tráfico simulado sobre cada enlace.</p>
+      <div class="grid-3" id="topo-kpis"></div>
+      <svg id="topo-svg" viewBox="0 0 900 420" preserveAspectRatio="xMidYMid meet"></svg>
+    </section>
+
+    <!-- ===================== VISTA: CLIENTES ===================== -->
+    <section class="view" id="view-clientes">
+      <h1>Clientes y servicios</h1>
+      <p class="view-desc">Cada cliente nuevo dispara el motor de planeación: cálculo de subred (VLSM) y asignación de VLAN según los servicios contratados.</p>
+
+      <div class="grid-2">
+        <div class="panel">
+          <label>Nombre del cliente</label>
+          <input type="text" id="cli-name" placeholder="Ej. Comercial Andina S.A.S">
+
+          <label>Cantidad de usuarios / hosts</label>
+          <input type="number" id="cli-users" min="1" placeholder="Ej. 45">
+
+          <label>Servicios contratados</label>
+          <div class="checks" id="cli-services">
+            <label class="chk" data-service="datos"><input type="checkbox" checked>Datos</label>
+            <label class="chk" data-service="voz"><input type="checkbox">Voz (VoIP)</label>
+            <label class="chk" data-service="video"><input type="checkbox">Videovigilancia</label>
+            <label class="chk" data-service="iot"><input type="checkbox">IoT</label>
+          </div>
+
+          <button class="btn-primary section-gap" id="btn-add-client" style="width:100%">Crear cliente y generar plan</button>
+          <div id="cli-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="kpi-label" style="margin-bottom:10px;">Pool de direccionamiento base</div>
+          <div class="mono" style="font-size:13px; color:var(--text-secondary); line-height:2;">
+            Red raíz: <span class="tag cyan">10.0.0.0/16</span><br>
+            Rango VLAN gestión: <span class="tag">1–99</span><br>
+            Rango VLAN voz: <span class="tag">100–199</span><br>
+            Rango VLAN datos/cliente: <span class="tag">200–3999</span>
+          </div>
+          <div class="section-gap" style="color:var(--text-dim); font-size:12px;">
+            El motor VLSM asigna el bloque más pequeño que cubre cada necesidad, sin desperdiciar direcciones ni solaparse con subredes existentes.
+          </div>
+        </div>
+      </div>
+
+      <div class="section-gap panel">
+        <div class="flex-between" style="margin-bottom:14px;">
+          <div class="kpi-label">Plan generado</div>
+          <span class="tag" id="client-count-tag">0 clientes</span>
+        </div>
+        <div id="clients-table-wrap"><div class="empty">Aún no hay clientes. Crea el primero arriba.</div></div>
+      </div>
+    </section>
+
+    <!-- ===================== VISTA: CONFIGURACIÓN ===================== -->
+    <section class="view" id="view-configuracion">
+      <h1>Revisor de configuración</h1>
+      <p class="view-desc">Genera la configuración propuesta para un cliente en modo dry-run antes de aplicarla. Nada se envía a un dispositivo real sin aprobación explícita.</p>
+
+      <div class="panel">
+        <label>Cliente</label>
+        <select id="cfg-client-select"><option value="">Selecciona un cliente…</option></select>
+
+        <div id="cfg-output" style="display:none;">
+          <label>Configuración propuesta (diff sobre baseline)</label>
+          <div class="diff-box" id="cfg-diff"></div>
+          <div class="flex-between section-gap">
+            <button class="btn-ghost" id="btn-regen">Regenerar</button>
+            <button class="btn-primary" id="btn-apply">Aprobar y aplicar (SSH)</button>
+          </div>
+          <div id="apply-progress"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== VISTA: AUDITORÍA ===================== -->
+    <section class="view" id="view-auditoria">
+      <h1>Auditoría</h1>
+      <p class="view-desc">Registro de cada cambio realizado por la herramienta: quién, qué y cuándo.</p>
+      <div class="panel">
+        <div id="audit-table-wrap"><div class="empty">Sin actividad todavía.</div></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* =========================================================
+   ESTADO EN MEMORIA (sin localStorage, por diseño)
+   ========================================================= */
+const state = {
+  clients: [],        // {id, name, users, services[], subnet:{cidr,network,broadcast,hosts}, vlans:[{id,name}]}
+  audit: [],
+  usedVlans: new Set(),
+  nextSubnetPointer: ipToInt('10.0.10.0'), // arranca después del rango reservado a gestión/voz
+  basePool: { start: ipToInt('10.0.0.0'), end: ipToInt('10.0.255.255') },
+  nextClientIndex: 1
+};
+
+const SERVICE_META = {
+  datos:  { label:'Datos',           vlanBase: 200, color:'cyan'  },
+  voz:    { label:'Voz (VoIP)',      vlanBase: 100, color:'amber' },
+  video:  { label:'Videovigilancia', vlanBase: 300, color:'cyan'  },
+  iot:    { label:'IoT',             vlanBase: 400, color:'amber' }
+};
+
+/* =========================================================
+   MOTOR DE SUBNETTING (VLSM) — ipaddress puro en JS
+   ========================================================= */
+function ipToInt(ip){
+  return ip.split('.').reduce((acc, o) => (acc << 8) + parseInt(o, 10), 0) >>> 0;
+}
+function intToIp(int){
+  return [24,16,8,0].map(s => (int >>> s) & 255).join('.');
+}
+function blockSizeForHosts(hosts){
+  // +2 por network/broadcast; mínimo /30 (4 direcciones)
+  let needed = hosts + 2;
+  let size = 4;
+  while (size < needed) size *= 2;
+  return size;
+}
+function prefixForBlockSize(size){
+  return 32 - Math.log2(size);
+}
+function allocateSubnet(hosts){
+  const size = blockSizeForHosts(hosts);
+  // alinear el puntero al múltiplo del tamaño de bloque
+  let start = state.nextSubnetPointer;
+  const remainder = start % size;
+  if (remainder !== 0) start += (size - remainder);
+
+  if (start + size > state.basePool.end) {
+    throw new Error('Pool de direccionamiento agotado (10.0.0.0/16). Amplía el rango base.');
+  }
+  state.nextSubnetPointer = start + size;
+
+  const prefix = prefixForBlockSize(size);
+  return {
+    cidr: `${intToIp(start)}/${prefix}`,
+    network: intToIp(start),
+    broadcast: intToIp(start + size - 1),
+    firstHost: intToIp(start + 1),
+    lastHost: intToIp(start + size - 2),
+    usableHosts: size - 2
+  };
+}
+
+/* =========================================================
+   MOTOR DE ASIGNACIÓN DE VLANs
+   ========================================================= */
+function allocateVlan(serviceKey, clientIndex){
+  const meta = SERVICE_META[serviceKey];
+  let candidate = meta.vlanBase + clientIndex;
+  while (state.usedVlans.has(candidate)) candidate++;
+  state.usedVlans.add(candidate);
+  return { id: candidate, name: `${serviceKey.toUpperCase()}-CLI${clientIndex}`, service: serviceKey };
+}
+
+/* =========================================================
+   AUDITORÍA
+   ========================================================= */
+function logAudit(action, detail){
+  state.audit.unshift({
+    time: new Date().toLocaleString('es-CO'),
+    user: 'admin',
+    action, detail
+  });
+  renderAudit();
+}
+
+/* =========================================================
+   RENDER: CLIENTES
+   ========================================================= */
+function renderClients(){
+  document.getElementById('client-count-tag').textContent = `${state.clients.length} cliente${state.clients.length!==1?'s':''}`;
+  document.getElementById('status-text').textContent = `${state.clients.length} cliente${state.clients.length!==1?'s':''} activo${state.clients.length!==1?'s':''}`;
+  const wrap = document.getElementById('clients-table-wrap');
+
+  if (state.clients.length === 0){
+    wrap.innerHTML = '<div class="empty">Aún no hay clientes. Crea el primero arriba.</div>';
+  } else {
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Cliente</th><th>Usuarios</th><th>Subred asignada</th><th>Hosts útiles</th><th>VLANs</th></tr></thead>
+      <tbody>
+        ${state.clients.map(c => `
+          <tr>
+            <td>${c.name}</td>
+            <td class="mono">${c.users}</td>
+            <td class="mono">${c.subnet.cidr}</td>
+            <td class="mono">${c.subnet.usableHosts}</td>
+            <td>${c.vlans.map(v => `<span class="tag ${SERVICE_META[v.service].color}">VLAN ${v.id}</span>`).join(' ')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  // refrescar selector de configuración
+  const sel = document.getElementById('cfg-client-select');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Selecciona un cliente…</option>' +
+    state.clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  if (state.clients.some(c => String(c.id) === current)) sel.value = current;
+
+  renderTopology();
+  renderTopoKpis();
+}
+
+function renderTopoKpis(){
+  const totalHosts = state.clients.reduce((a,c) => a + Number(c.users), 0);
+  const totalVlans = state.usedVlans.size;
+  const used = state.nextSubnetPointer - state.basePool.start;
+  const total = state.basePool.end - state.basePool.start;
+  const pctUsed = ((used/total)*100).toFixed(2);
+  document.getElementById('topo-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Clientes provisionados</div><div class="kpi-value">${state.clients.length}</div></div>
+    <div class="kpi"><div class="kpi-label">VLANs en uso</div><div class="kpi-value">${totalVlans}</div></div>
+    <div class="kpi"><div class="kpi-label">Uso del pool /16</div><div class="kpi-value">${pctUsed}%</div></div>
+  `;
+}
+
+/* =========================================================
+   RENDER: TOPOLOGÍA (SVG generado desde el modelo)
+   ========================================================= */
+function renderTopology(){
+  const svg = document.getElementById('topo-svg');
+  const coreX = 450, coreY = 60;
+  const distY = 190;
+  const accessY = 340;
+  const clients = state.clients.slice(0, 8); // máx 8 nodos visibles para legibilidad
+  const distXs = [280, 620];
+
+  let nodes = `<circle cx="${coreX}" cy="${coreY}" r="20" fill="var(--bg-elevated)" stroke="var(--cyan)" stroke-width="2"/>
+    <text x="${coreX}" y="${coreY+4}" text-anchor="middle" class="topo-node-label">CORE</text>`;
+
+  let links = '', pulses = '';
+  distXs.forEach(dx => {
+    links += `<path class="topo-link" d="M${coreX},${coreY+20} L${dx},${distY-16}"/>`;
+    pulses += `<path class="topo-pulse" d="M${coreX},${coreY+20} L${dx},${distY-16}"/>`;
+    nodes += `<circle cx="${dx}" cy="${distY}" r="16" fill="var(--bg-elevated)" stroke="var(--border)" stroke-width="2"/>
+      <text x="${dx}" y="${distY+4}" text-anchor="middle" class="topo-node-label" style="font-size:9px">DIST</text>`;
+  });
+
+  if (clients.length === 0){
+    nodes += `<text x="450" y="260" text-anchor="middle" class="topo-node-sub">Sin clientes provisionados aún — crea uno en la pestaña "Clientes"</text>`;
+  } else {
+    const spacing = 800 / (clients.length + 1);
+    clients.forEach((c, i) => {
+      const ax = 50 + spacing * (i + 1);
+      const parentX = distXs[i % 2];
+      links += `<path class="topo-link" d="M${parentX},${distY+16} L${ax},${accessY-14}"/>`;
+      pulses += `<path class="topo-pulse" d="M${parentX},${distY+16} L${ax},${accessY-14}" style="animation-delay:${i*0.3}s"/>`;
+      nodes += `<circle cx="${ax}" cy="${accessY}" r="13" fill="var(--bg-elevated)" stroke="var(--amber)" stroke-width="1.5"/>
+        <text x="${ax}" y="${accessY+28}" text-anchor="middle" class="topo-node-label" style="font-size:10px">${c.name.length>14? c.name.slice(0,13)+'…':c.name}</text>
+        <text x="${ax}" y="${accessY+40}" text-anchor="middle" class="topo-node-sub">${c.subnet.cidr}</text>`;
+    });
+  }
+
+  svg.innerHTML = links + pulses + nodes;
+}
+
+/* =========================================================
+   RENDER: AUDITORÍA
+   ========================================================= */
+function renderAudit(){
+  const wrap = document.getElementById('audit-table-wrap');
+  if (state.audit.length === 0){
+    wrap.innerHTML = '<div class="empty">Sin actividad todavía.</div>';
+    return;
+  }
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+    <tbody>
+      ${state.audit.map(a => `<tr>
+        <td class="mono">${a.time}</td>
+        <td>${a.user}</td>
+        <td><span class="tag cyan">${a.action}</span></td>
+        <td class="mono" style="color:var(--text-secondary)">${a.detail}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+/* =========================================================
+   CONFIGURACIÓN (dry-run + aplicar simulado)
+   ========================================================= */
+function generateConfig(client){
+  const vlanLines = client.vlans.map(v =>
+    `+ vlan ${v.id}\n+   name ${v.name}`
+  ).join('\n');
+  return `interface Vlan-Group-${client.id}
+!--- baseline actual: sin configuración para este cliente ---
+${vlanLines}
++ interface range GigabitEthernet0/${client.id}
++   description UPLINK-${client.name.replace(/\s+/g,'_').toUpperCase()}
++   switchport mode trunk
++   switchport trunk allowed vlan ${client.vlans.map(v=>v.id).join(',')}
++ interface Vlan${client.vlans[0].id}
++   ip address ${client.subnet.network.split('.').slice(0,3).join('.')}.1 255.255.255.${256-client.subnet.usableHosts-2}
++   description GATEWAY-${client.name.replace(/\s+/g,'_').toUpperCase()}
+!--- dry-run: ningún comando ha sido enviado al dispositivo ---`;
+}
+
+function renderConfigDiff(client){
+  const raw = generateConfig(client);
+  document.getElementById('cfg-diff').innerHTML = raw.split('\n').map(line => {
+    if (line.startsWith('+')) return `<span class="diff-add">${line}</span>`;
+    return `<span class="diff-ctx">${line}</span>`;
+  }).join('');
+  document.getElementById('cfg-output').style.display = 'block';
+  document.getElementById('apply-progress').innerHTML = '';
+}
+
+/* =========================================================
+   EVENTOS
+   ========================================================= */
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('view-' + item.dataset.view).classList.add('active');
+  });
+});
+
+document.querySelectorAll('#cli-services .chk').forEach(chk => {
+  chk.addEventListener('click', () => {
+    const input = chk.querySelector('input');
+    input.checked = !input.checked;
+    chk.classList.toggle('checked', input.checked);
+  });
+});
+
+document.getElementById('btn-add-client').addEventListener('click', () => {
+  const nameEl = document.getElementById('cli-name');
+  const usersEl = document.getElementById('cli-users');
+  const errEl = document.getElementById('cli-error');
+  errEl.style.display = 'none';
+
+  const name = nameEl.value.trim();
+  const users = parseInt(usersEl.value, 10);
+  const services = Array.from(document.querySelectorAll('#cli-services .chk'))
+    .filter(c => c.querySelector('input').checked)
+    .map(c => c.dataset.service);
+
+  if (!name || !users || users < 1){
+    errEl.textContent = 'Ingresa un nombre y una cantidad de usuarios válida.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (services.length === 0){
+    errEl.textContent = 'Selecciona al menos un servicio.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const clientIndex = state.nextClientIndex++;
+    const subnet = allocateSubnet(users);
+    const vlans = services.map(s => allocateVlan(s, clientIndex));
+    const client = { id: Date.now(), name, users, services, subnet, vlans };
+    state.clients.push(client);
+    logAudit('CREAR_CLIENTE', `${name} → ${subnet.cidr}, VLANs: ${vlans.map(v=>v.id).join(',')}`);
+    renderClients();
+
+    nameEl.value = ''; usersEl.value = '';
+  } catch(e){
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+});
+
+document.getElementById('cfg-client-select').addEventListener('change', (e) => {
+  const client = state.clients.find(c => String(c.id) === e.target.value);
+  if (client) renderConfigDiff(client);
+  else document.getElementById('cfg-output').style.display = 'none';
+});
+
+document.getElementById('btn-regen').addEventListener('click', () => {
+  const client = state.clients.find(c => String(c.id) === document.getElementById('cfg-client-select').value);
+  if (client) renderConfigDiff(client);
+});
+
+document.getElementById('btn-apply').addEventListener('click', (e) => {
+  const btn = e.target;
+  const client = state.clients.find(c => String(c.id) === document.getElementById('cfg-client-select').value);
+  if (!client) return;
+  btn.disabled = true;
+  const progress = document.getElementById('apply-progress');
+  progress.innerHTML = `<div class="progress-row"><div class="spinner"></div>Conectando por SSH y aplicando configuración (simulado)…</div>`;
+
+  setTimeout(() => {
+    progress.innerHTML = `<div class="progress-row" style="color:var(--green)">✓ Configuración aplicada correctamente en ${client.name}</div>`;
+    logAudit('APLICAR_CONFIG', `${client.name} — VLANs ${client.vlans.map(v=>v.id).join(',')} push exitoso (simulado)`);
+    btn.disabled = false;
+  }, 1600);
+});
+
+/* Init */
+renderClients();
+renderAudit();
+</script>
+</body>
+</html>
