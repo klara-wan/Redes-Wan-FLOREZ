@@ -211,6 +211,30 @@
     border:1px solid var(--border); padding:6px 10px; border-radius:6px; cursor:pointer;
   }
   .suggestion:hover{border-color:var(--cyan); color:var(--cyan);}
+
+  /* Sedes / VLSM multi-sitio */
+  .floor-row{display:grid; grid-template-columns:1fr 110px 34px; gap:8px; margin-bottom:8px; align-items:center;}
+  .floor-remove{
+    width:34px; height:34px; border-radius:7px; background:var(--bg-elevated); border:1px solid var(--border);
+    color:var(--red); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:16px;
+  }
+  .floor-remove:hover{border-color:var(--red);}
+  .table-scroll{overflow-x:auto;}
+  .table-scroll table{min-width:920px;}
+  .util-bar{height:6px; border-radius:3px; background:var(--bg-elevated); overflow:hidden; margin-top:4px;}
+  .util-fill{height:100%; background:linear-gradient(90deg, var(--cyan), var(--green));}
+  .site-card{
+    border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; background:var(--bg-elevated);
+  }
+  .site-card summary{cursor:pointer; font-family:var(--mono); font-size:13px; list-style:none; display:flex; justify-content:space-between; align-items:center;}
+  .site-card summary::-webkit-details-marker{display:none;}
+  .brand-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; margin-top:6px;}
+  .brand-opt{
+    text-align:center; padding:10px 6px; border-radius:8px; border:1px solid var(--border); background:var(--bg-elevated);
+    cursor:pointer; font-size:12px; color:var(--text-secondary); font-family:var(--mono);
+  }
+  .brand-opt.selected{border-color:var(--cyan); color:var(--cyan); background:var(--cyan-dim);}
+  code.inline{font-family:var(--mono); background:var(--bg-elevated); padding:1px 5px; border-radius:4px; font-size:12px;}
 </style>
 </head>
 <body>
@@ -229,9 +253,10 @@
   <nav>
     <div class="nav-item active" data-view="topologia"><span class="nav-num">01</span>Topología</div>
     <div class="nav-item" data-view="clientes"><span class="nav-num">02</span>Clientes</div>
-    <div class="nav-item" data-view="configuracion"><span class="nav-num">03</span>Configuración</div>
-    <div class="nav-item" data-view="auditoria"><span class="nav-num">04</span>Auditoría</div>
-    <div class="nav-item" data-view="agente"><span class="nav-num">05</span>Agente IA</div>
+    <div class="nav-item" data-view="sedes"><span class="nav-num">03</span>Sedes (VLSM)</div>
+    <div class="nav-item" data-view="configuracion"><span class="nav-num">04</span>Configuración</div>
+    <div class="nav-item" data-view="auditoria"><span class="nav-num">05</span>Auditoría</div>
+    <div class="nav-item" data-view="agente"><span class="nav-num">06</span>Agente IA</div>
   </nav>
 
   <main>
@@ -292,10 +317,46 @@
       </div>
     </section>
 
+    <!-- ===================== VISTA: SEDES (VLSM) ===================== -->
+    <section class="view" id="view-sedes">
+      <h1>Direccionamiento por sede (VLSM)</h1>
+      <p class="view-desc">Ingresa el bloque base de la sede y los pisos/áreas con su cantidad de usuarios: la herramienta calcula el esquema VLSM completo (igual que la planilla de referencia) sin que tengas que hacer las cuentas a mano.</p>
+
+      <div class="grid-2">
+        <div class="panel">
+          <label>Nombre de la sede</label>
+          <input type="text" id="site-name" placeholder="Ej. Sede A - Edificio Norte">
+
+          <label>Bloque base asignado (CIDR)</label>
+          <input type="text" id="site-cidr" placeholder="Ej. 172.16.0.0/21">
+
+          <label>Pisos / áreas y usuarios requeridos</label>
+          <div id="floor-rows"></div>
+          <button class="btn-ghost" id="btn-add-floor" style="margin-top:4px;">+ Agregar piso</button>
+
+          <button class="btn-primary section-gap" id="btn-calc-site" style="width:100%">Calcular direccionamiento VLSM</button>
+          <div id="site-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="kpi-label" style="margin-bottom:10px;">Cómo se calcula</div>
+          <div style="color:var(--text-secondary); font-size:12.5px; line-height:1.9;">
+            1. Se ordenan los pisos de mayor a menor número de usuarios.<br>
+            2. A cada requerimiento se le suman 2 direcciones (red + broadcast).<br>
+            3. Se asigna el bloque de potencia de 2 igual o superior.<br>
+            4. Se calcula <code class="inline">n</code> (bits de host) y el prefijo <code class="inline">32−n</code>.<br>
+            5. Los bloques se asignan de forma sucesiva dentro del bloque base, sin solaparse.
+          </div>
+        </div>
+      </div>
+
+      <div class="section-gap" id="sites-output"></div>
+    </section>
+
     <!-- ===================== VISTA: CONFIGURACIÓN ===================== -->
     <section class="view" id="view-configuracion">
       <h1>Revisor de configuración</h1>
-      <p class="view-desc">Genera la configuración propuesta para un cliente en modo dry-run antes de aplicarla. Nada se envía a un dispositivo real sin aprobación explícita.</p>
+      <p class="view-desc">Genera la configuración propuesta en modo dry-run antes de aplicarla. Nada se envía a un dispositivo real sin aprobación explícita.</p>
 
       <div class="panel">
         <label>Cliente</label>
@@ -309,6 +370,32 @@
             <button class="btn-primary" id="btn-apply">Aprobar y aplicar (SSH)</button>
           </div>
           <div id="apply-progress"></div>
+        </div>
+      </div>
+
+      <div class="panel section-gap">
+        <div class="flex-between">
+          <h1 style="font-size:15px;">Generador de comandos por sede</h1>
+        </div>
+        <p class="view-desc" style="margin-bottom:14px;">Elige la sede calculada y la marca/modelo de equipo: se generan los comandos reales de VLAN e IP en la sintaxis de ese fabricante.</p>
+
+        <label>Sede</label>
+        <select id="cfg-site-select"><option value="">Selecciona una sede…</option></select>
+
+        <label>Marca del equipo</label>
+        <div class="brand-grid" id="brand-grid"></div>
+
+        <label id="model-label" style="display:none;">Modelo</label>
+        <select id="cfg-model-select" style="display:none;"></select>
+
+        <div id="vendor-cfg-output" style="display:none;">
+          <label>Comandos generados</label>
+          <div class="diff-box" id="vendor-cfg-diff" style="max-height:420px;"></div>
+          <div class="flex-between section-gap">
+            <button class="btn-ghost" id="btn-copy-vendor-cfg">Copiar comandos</button>
+            <button class="btn-primary" id="btn-apply-vendor-cfg">Aprobar y aplicar (SSH)</button>
+          </div>
+          <div id="apply-vendor-progress"></div>
         </div>
       </div>
     </section>
@@ -660,6 +747,302 @@ document.getElementById('btn-apply').addEventListener('click', (e) => {
 });
 
 /* =========================================================
+   SEDES — motor VLSM multi-sitio (a partir de bloque base + pisos)
+   ========================================================= */
+state.sites = []; // {id, name, baseCidr, floors:[{name,users}], plan:[...], totals:{}}
+
+function cidrToRange(cidr){
+  const [ip, prefix] = cidr.split('/');
+  const p = parseInt(prefix, 10);
+  const base = ipToInt(ip);
+  const size = Math.pow(2, 32 - p);
+  return { base, size, prefix: p };
+}
+function maskFromPrefix(prefix){
+  const bits = '1'.repeat(prefix) + '0'.repeat(32-prefix);
+  return [0,8,16,24].map(s => parseInt(bits.substr(s,8),2)).join('.');
+}
+function computeVlsmForSite(baseCidr, floors){
+  const { base, size: poolSize } = cidrToRange(baseCidr);
+  const sorted = [...floors].sort((a,b) => b.users - a.users);
+  let pointer = base;
+  const plan = [];
+  let totalAssigned = 0;
+
+  sorted.forEach(f => {
+    const blockSize = blockSizeForHosts(f.users);
+    const remainder = pointer % blockSize;
+    if (remainder !== 0) pointer += (blockSize - remainder);
+    if (pointer + blockSize > base + poolSize){
+      throw new Error(`El bloque base ${baseCidr} no alcanza para el piso "${f.name}" (se agotó el espacio disponible).`);
+    }
+    const prefix = prefixForBlockSize(blockSize);
+    plan.push({
+      name: f.name, users: f.users, hostReq2: f.users + 2,
+      blockSize, n: 32 - prefix, prefix,
+      mask: maskFromPrefix(prefix),
+      network: intToIp(pointer),
+      firstHost: intToIp(pointer + 1),
+      lastHost: intToIp(pointer + blockSize - 2),
+      broadcast: intToIp(pointer + blockSize - 1),
+      usableHosts: blockSize - 2
+    });
+    totalAssigned += blockSize;
+    pointer += blockSize;
+  });
+
+  return { plan, totals: { assigned: totalAssigned, poolSize, utilization: (totalAssigned/poolSize*100) } };
+}
+
+function addFloorRow(name='', users=''){
+  const wrap = document.getElementById('floor-rows');
+  const row = document.createElement('div');
+  row.className = 'floor-row';
+  row.innerHTML = `
+    <input type="text" class="floor-name" placeholder="Ej. Piso 1" value="${name}">
+    <input type="number" class="floor-users" placeholder="Usuarios" min="1" value="${users}">
+    <div class="floor-remove" title="Quitar">×</div>`;
+  row.querySelector('.floor-remove').addEventListener('click', () => row.remove());
+  wrap.appendChild(row);
+}
+document.getElementById('btn-add-floor').addEventListener('click', () => addFloorRow());
+addFloorRow('Piso 1', ''); addFloorRow('Piso 2', ''); addFloorRow('Piso 3', '');
+
+document.getElementById('btn-calc-site').addEventListener('click', () => {
+  const errEl = document.getElementById('site-error');
+  errEl.style.display = 'none';
+  const name = document.getElementById('site-name').value.trim();
+  const cidr = document.getElementById('site-cidr').value.trim();
+  const rows = Array.from(document.querySelectorAll('#floor-rows .floor-row'));
+  const floors = rows.map(r => ({
+    name: r.querySelector('.floor-name').value.trim() || 'Área sin nombre',
+    users: parseInt(r.querySelector('.floor-users').value, 10)
+  })).filter(f => f.users > 0);
+
+  if (!name || !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(cidr)){
+    errEl.textContent = 'Ingresa un nombre de sede y un bloque CIDR válido (ej. 172.16.0.0/21).';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (floors.length === 0){
+    errEl.textContent = 'Agrega al menos un piso/área con usuarios válidos.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try{
+    const { plan, totals } = computeVlsmForSite(cidr, floors);
+    const site = { id: Date.now(), name, baseCidr: cidr, floors, plan, totals };
+    state.sites.push(site);
+    logAudit('CALCULAR_VLSM_SEDE', `${name} (${cidr}) → ${floors.length} pisos, uso ${totals.utilization.toFixed(1)}%`);
+    renderSites();
+  } catch(e){
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+});
+
+function renderSites(){
+  const wrap = document.getElementById('sites-output');
+  if (state.sites.length === 0){
+    wrap.innerHTML = '<div class="empty">Aún no has calculado ninguna sede.</div>';
+  } else {
+    wrap.innerHTML = state.sites.map(site => `
+      <details class="site-card" open>
+        <summary>
+          <span>${site.name} — <span style="color:var(--text-dim)">${site.baseCidr}</span></span>
+          <span class="tag cyan">${site.totals.utilization.toFixed(1)}% usado</span>
+        </summary>
+        <div class="util-bar"><div class="util-fill" style="width:${Math.min(site.totals.utilization,100).toFixed(1)}%"></div></div>
+        <div class="table-scroll section-gap">
+          <table>
+            <thead><tr>
+              <th>Piso/Área</th><th>Usuarios</th><th>+2</th><th>Bloque</th><th>n</th><th>Prefijo</th>
+              <th>Máscara</th><th>Red</th><th>Primera IP</th><th>Última IP</th><th>Broadcast</th><th>Hosts útiles</th>
+            </tr></thead>
+            <tbody>
+              ${site.plan.map(p => `<tr>
+                <td>${p.name}</td><td class="mono">${p.users}</td><td class="mono">${p.hostReq2}</td>
+                <td class="mono">${p.blockSize}</td><td class="mono">${p.n}</td><td class="mono">/${p.prefix}</td>
+                <td class="mono">${p.mask}</td><td class="mono">${p.network}</td><td class="mono">${p.firstHost}</td>
+                <td class="mono">${p.lastHost}</td><td class="mono">${p.broadcast}</td><td class="mono">${p.usableHosts}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    `).join('');
+  }
+  // refrescar selector de sedes en Configuración
+  const sel = document.getElementById('cfg-site-select');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Selecciona una sede…</option>' +
+    state.sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  if (state.sites.some(s => String(s.id) === cur)) sel.value = cur;
+}
+
+/* =========================================================
+   CATÁLOGO DE MARCAS/EQUIPOS Y GENERADOR DE COMANDOS
+   ========================================================= */
+const EQUIPMENT_CATALOG = [
+  { brand:'Cisco', vendorKey:'cisco', models:[
+    { name:'Catalyst 9300', ifacePrefix:'GigabitEthernet1/0/' },
+    { name:'Catalyst 2960-X', ifacePrefix:'GigabitEthernet0/' }
+  ]},
+  { brand:'MikroTik', vendorKey:'mikrotik', models:[
+    { name:'CCR2004-1G-12S+2XS', ifacePrefix:'ether' },
+    { name:'CRS326-24G-2S+', ifacePrefix:'ether' }
+  ]},
+  { brand:'Huawei', vendorKey:'huawei', models:[
+    { name:'S5735-L24T4S', ifacePrefix:'GigabitEthernet0/0/' }
+  ]},
+  { brand:'Juniper', vendorKey:'juniper', models:[
+    { name:'EX4300-48T', ifacePrefix:'ge-0/0/' }
+  ]},
+  { brand:'Aruba (HPE)', vendorKey:'aruba', models:[
+    { name:'Aruba 6300', ifacePrefix:'1/1/' }
+  ]}
+];
+
+let selectedBrandIdx = null, selectedModelIdx = 0;
+
+function renderBrandGrid(){
+  const grid = document.getElementById('brand-grid');
+  grid.innerHTML = EQUIPMENT_CATALOG.map((b,i) =>
+    `<div class="brand-opt ${i===selectedBrandIdx?'selected':''}" data-idx="${i}">${b.brand}</div>`
+  ).join('');
+  grid.querySelectorAll('.brand-opt').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedBrandIdx = parseInt(el.dataset.idx, 10);
+      selectedModelIdx = 0;
+      renderBrandGrid();
+      renderModelSelect();
+      renderVendorConfig();
+    });
+  });
+}
+function renderModelSelect(){
+  const label = document.getElementById('model-label');
+  const sel = document.getElementById('cfg-model-select');
+  if (selectedBrandIdx === null){ label.style.display='none'; sel.style.display='none'; return; }
+  const models = EQUIPMENT_CATALOG[selectedBrandIdx].models;
+  label.style.display='block'; sel.style.display='block';
+  sel.innerHTML = models.map((m,i) => `<option value="${i}">${m.name}</option>`).join('');
+  sel.value = selectedModelIdx;
+}
+document.getElementById('cfg-model-select').addEventListener('change', (e) => {
+  selectedModelIdx = parseInt(e.target.value, 10);
+  renderVendorConfig();
+});
+document.getElementById('cfg-site-select').addEventListener('change', renderVendorConfig);
+renderBrandGrid();
+
+function vlanIdForFloor(idx){ return 10 + idx * 10; }
+
+function generateVendorCommands(site, vendorKey, model){
+  const lines = [];
+  site.plan.forEach((p, idx) => {
+    const vlanId = vlanIdForFloor(idx);
+    const vlanName = p.name.replace(/\s+/g,'_').toUpperCase();
+    const gw = p.firstHost;
+    const port = `${model.ifacePrefix}${idx+1}`;
+
+    if (vendorKey === 'cisco'){
+      lines.push(
+        `vlan ${vlanId}`,
+        ` name ${vlanName}`,
+        `!`,
+        `interface Vlan${vlanId}`,
+        ` description GW-${vlanName}`,
+        ` ip address ${gw} ${p.mask}`,
+        ` no shutdown`,
+        `!`,
+        `interface ${port}`,
+        ` switchport mode access`,
+        ` switchport access vlan ${vlanId}`,
+        ` description ACCESO-${vlanName}`,
+        `!`
+      );
+    } else if (vendorKey === 'mikrotik'){
+      lines.push(
+        `/interface vlan add name=vlan${vlanId}-${p.name.replace(/\s+/g,'').toLowerCase()} vlan-id=${vlanId} interface=${port}`,
+        `/ip address add address=${gw}/${p.prefix} interface=vlan${vlanId}-${p.name.replace(/\s+/g,'').toLowerCase()} comment="${vlanName}"`,
+        `/interface bridge port add bridge=bridge1 interface=${port} pvid=${vlanId}`
+      );
+    } else if (vendorKey === 'huawei'){
+      lines.push(
+        `vlan ${vlanId}`,
+        ` description ${vlanName}`,
+        `interface Vlanif${vlanId}`,
+        ` ip address ${gw} ${p.mask}`,
+        `interface ${port}`,
+        ` port link-type access`,
+        ` port default vlan ${vlanId}`,
+        `#`
+      );
+    } else if (vendorKey === 'juniper'){
+      lines.push(
+        `set vlans ${vlanName} vlan-id ${vlanId}`,
+        `set interfaces irb unit ${vlanId} family inet address ${gw}/${p.prefix}`,
+        `set interfaces ${port} unit 0 family ethernet-switching vlan members ${vlanName}`
+      );
+    } else if (vendorKey === 'aruba'){
+      lines.push(
+        `vlan ${vlanId}`,
+        ` name ${vlanName}`,
+        `interface vlan ${vlanId}`,
+        ` ip address ${gw}/${p.prefix}`,
+        `interface ${port}`,
+        ` no routing`,
+        ` vlan access ${vlanId}`,
+        `!`
+      );
+    }
+  });
+  return lines.join('\n');
+}
+
+function renderVendorConfig(){
+  const siteId = document.getElementById('cfg-site-select').value;
+  const site = state.sites.find(s => String(s.id) === siteId);
+  const out = document.getElementById('vendor-cfg-output');
+  if (!site || selectedBrandIdx === null){ out.style.display = 'none'; return; }
+
+  const brand = EQUIPMENT_CATALOG[selectedBrandIdx];
+  const model = brand.models[selectedModelIdx];
+  const cmd = generateVendorCommands(site, brand.vendorKey, model);
+  document.getElementById('vendor-cfg-diff').textContent = cmd;
+  out.style.display = 'block';
+  document.getElementById('apply-vendor-progress').innerHTML = '';
+}
+
+document.getElementById('btn-copy-vendor-cfg').addEventListener('click', () => {
+  const text = document.getElementById('vendor-cfg-diff').textContent;
+  navigator.clipboard?.writeText(text).catch(()=>{});
+  const btn = document.getElementById('btn-copy-vendor-cfg');
+  const original = btn.textContent;
+  btn.textContent = 'Copiado ✓';
+  setTimeout(() => btn.textContent = original, 1400);
+});
+
+document.getElementById('btn-apply-vendor-cfg').addEventListener('click', (e) => {
+  const siteId = document.getElementById('cfg-site-select').value;
+  const site = state.sites.find(s => String(s.id) === siteId);
+  if (!site || selectedBrandIdx === null) return;
+  const brand = EQUIPMENT_CATALOG[selectedBrandIdx];
+  const model = brand.models[selectedModelIdx];
+  const btn = e.target;
+  btn.disabled = true;
+  const progress = document.getElementById('apply-vendor-progress');
+  progress.innerHTML = `<div class="progress-row"><div class="spinner"></div>Conectando por SSH a equipos ${brand.brand} (simulado)…</div>`;
+  setTimeout(() => {
+    progress.innerHTML = `<div class="progress-row" style="color:var(--green)">✓ Configuración aplicada en ${site.name} (${brand.brand} ${model.name}, simulado)</div>`;
+    logAudit('APLICAR_CONFIG_SEDE', `${site.name} — ${brand.brand} ${model.name}, ${site.plan.length} VLANs (simulado)`);
+    btn.disabled = false;
+  }, 1600);
+});
+
+/* =========================================================
    AGENTE IA — parser de intenciones basado en reglas
    (reemplazar `runAgent()` por una llamada real a la API de
    Claude cuando este prototipo se conecte a un backend propio)
@@ -762,6 +1145,7 @@ addChatMessage('agent', `Hola, soy el agente de planeación. Puedo crear cliente
 /* Init */
 renderClients();
 renderAudit();
+renderSites();
 </script>
 </body>
 </html>
