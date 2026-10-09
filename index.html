@@ -220,7 +220,7 @@
   }
   .floor-remove:hover{border-color:var(--red);}
   .table-scroll{overflow-x:auto;}
-  .table-scroll table{min-width:920px;}
+  .table-scroll table{min-width:1150px;}
   .util-bar{height:6px; border-radius:3px; background:var(--bg-elevated); overflow:hidden; margin-top:4px;}
   .util-fill{height:100%; background:linear-gradient(90deg, var(--cyan), var(--green));}
   .site-card{
@@ -247,7 +247,7 @@
         <div class="brand-sub">v0.1 — prototipo</div>
       </div>
     </div>
-    <div class="status-pill"><span class="dot"></span><span id="status-text">0 clientes activos</span></div>
+    <div style="display:flex;gap:10px;align-items:center;"><div class="status-pill" id="user-pill">Usuario: admin</div><div class="status-pill"><span class="dot"></span><span id="status-text">0 clientes activos</span></div></div>
   </header>
 
   <nav>
@@ -257,6 +257,7 @@
     <div class="nav-item" data-view="configuracion"><span class="nav-num">04</span>Configuración</div>
     <div class="nav-item" data-view="auditoria"><span class="nav-num">05</span>Auditoría</div>
     <div class="nav-item" data-view="agente"><span class="nav-num">06</span>Agente IA</div>
+    <div class="nav-item" data-view="usuarios"><span class="nav-num">07</span>Usuarios</div>
   </nav>
 
   <main>
@@ -330,6 +331,9 @@
           <label>Bloque base asignado (CIDR)</label>
           <input type="text" id="site-cidr" placeholder="Ej. 172.16.0.0/21">
 
+          <label>Prefijo IPv6 de la sede (/48)</label>
+          <input type="text" id="site-v6" placeholder="Ej. 2001:db8:1" value="2001:db8:1">
+
           <label>Pisos / áreas y usuarios requeridos</label>
           <div id="floor-rows"></div>
           <button class="btn-ghost" id="btn-add-floor" style="margin-top:4px;">+ Agregar piso</button>
@@ -388,6 +392,12 @@
         <label id="model-label" style="display:none;">Modelo</label>
         <select id="cfg-model-select" style="display:none;"></select>
 
+        <label>Versión del sistema operativo</label>
+        <select id="cfg-version-select"></select>
+
+        <label>Seguridad, acceso remoto e infraestructura</label>
+        <div class="checks" id="sec-opts"></div>
+
         <div id="vendor-cfg-output" style="display:none;">
           <label>Comandos generados</label>
           <div class="diff-box" id="vendor-cfg-diff" style="max-height:420px;"></div>
@@ -398,6 +408,21 @@
           <div id="apply-vendor-progress"></div>
         </div>
       </div>
+    </section>
+
+    <!-- ===================== VISTA: USUARIOS ===================== -->
+    <section class="view" id="view-usuarios">
+      <h1>Usuarios e historial</h1>
+      <p class="view-desc">Registro de usuarios, cambio de sesión y trazabilidad de quién hizo cada acción. Los roles son informativos hasta conectar autenticación real (JWT) en el backend.</p>
+      <div class="grid-2">
+        <div class="panel">
+          <label>Nombre de usuario</label><input type="text" id="user-new-name" placeholder="Ej. jperez">
+          <label>Rol</label><select id="user-new-role"><option>Administrador</option><option>Operador</option><option>Lector</option></select>
+          <button class="btn-primary section-gap" id="btn-add-user" style="width:100%">Crear usuario</button>
+        </div>
+        <div class="panel" id="users-list"></div>
+      </div>
+      <div class="panel section-gap"><div class="kpi-label" style="margin-bottom:10px;">Historial de sesiones</div><div id="sessions-table"></div></div>
     </section>
 
     <!-- ===================== VISTA: AUDITORÍA ===================== -->
@@ -513,7 +538,7 @@ function allocateVlan(serviceKey, clientIndex){
 function logAudit(action, detail){
   state.audit.unshift({
     time: new Date().toLocaleString('es-CO'),
-    user: 'admin',
+    user: state.currentUser.name,
     action, detail
   });
   renderAudit();
@@ -749,7 +774,10 @@ document.getElementById('btn-apply').addEventListener('click', (e) => {
 /* =========================================================
    SEDES — motor VLSM multi-sitio (a partir de bloque base + pisos)
    ========================================================= */
-state.sites = []; // {id, name, baseCidr, floors:[{name,users}], plan:[...], totals:{}}
+state.sites = [];
+state.users = [{name:'admin', role:'Administrador'}];
+state.currentUser = state.users[0];
+state.sessions = [];
 
 function cidrToRange(cidr){
   const [ip, prefix] = cidr.split('/');
@@ -831,8 +859,11 @@ document.getElementById('btn-calc-site').addEventListener('click', () => {
   }
 
   try{
+    const v6 = (document.getElementById('site-v6').value.trim() || '2001:db8:1').replace(/:+$/,'');
+    if (!/^[0-9a-f:]+$/i.test(v6)) throw new Error('Prefijo IPv6 inválido (ej. 2001:db8:1).');
     const { plan, totals } = computeVlsmForSite(cidr, floors);
-    const site = { id: Date.now(), name, baseCidr: cidr, floors, plan, totals };
+    plan.forEach((p,i) => { const h=(i+1).toString(16); p.v6=`${v6}:${h}::/64`; p.v6gw=`${v6}:${h}::1`; });
+    const site = { id: Date.now(), name, baseCidr: cidr, v6, floors, plan, totals };
     state.sites.push(site);
     logAudit('CALCULAR_VLSM_SEDE', `${name} (${cidr}) → ${floors.length} pisos, uso ${totals.utilization.toFixed(1)}%`);
     renderSites();
@@ -854,18 +885,18 @@ function renderSites(){
           <span class="tag cyan">${site.totals.utilization.toFixed(1)}% usado</span>
         </summary>
         <div class="util-bar"><div class="util-fill" style="width:${Math.min(site.totals.utilization,100).toFixed(1)}%"></div></div>
-        <div class="table-scroll section-gap">
+        ${siteTopoSvg(site)}<div class="table-scroll section-gap">
           <table>
             <thead><tr>
               <th>Piso/Área</th><th>Usuarios</th><th>+2</th><th>Bloque</th><th>n</th><th>Prefijo</th>
-              <th>Máscara</th><th>Red</th><th>Primera IP</th><th>Última IP</th><th>Broadcast</th><th>Hosts útiles</th>
+              <th>Máscara</th><th>Red</th><th>Primera IP</th><th>Última IP</th><th>Broadcast</th><th>Hosts útiles</th><th>IPv6 /64</th>
             </tr></thead>
             <tbody>
               ${site.plan.map(p => `<tr>
                 <td>${p.name}</td><td class="mono">${p.users}</td><td class="mono">${p.hostReq2}</td>
                 <td class="mono">${p.blockSize}</td><td class="mono">${p.n}</td><td class="mono">/${p.prefix}</td>
                 <td class="mono">${p.mask}</td><td class="mono">${p.network}</td><td class="mono">${p.firstHost}</td>
-                <td class="mono">${p.lastHost}</td><td class="mono">${p.broadcast}</td><td class="mono">${p.usableHosts}</td>
+                <td class="mono">${p.lastHost}</td><td class="mono">${p.broadcast}</td><td class="mono">${p.usableHosts}</td><td class="mono">${p.v6}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -917,6 +948,7 @@ function renderBrandGrid(){
       selectedModelIdx = 0;
       renderBrandGrid();
       renderModelSelect();
+      renderVersionSelect();
       renderVendorConfig();
     });
   });
@@ -1010,7 +1042,7 @@ function renderVendorConfig(){
 
   const brand = EQUIPMENT_CATALOG[selectedBrandIdx];
   const model = brand.models[selectedModelIdx];
-  const cmd = generateVendorCommands(site, brand.vendorKey, model);
+  const cmd = buildFullConfig(site, brand, model);
   document.getElementById('vendor-cfg-diff').textContent = cmd;
   out.style.display = 'block';
   document.getElementById('apply-vendor-progress').innerHTML = '';
@@ -1142,10 +1174,85 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e
 /* mensaje de bienvenida del agente */
 addChatMessage('agent', `Hola, soy el agente de planeación. Puedo crear clientes, calcular subredes y VLANs, generar configuración en dry-run y llevarte a la vista que necesites. Escribe una instrucción o usa una de las sugerencias.`);
 
+/* =========================================================
+   VERSIONES, SEGURIDAD, ACCESO REMOTO, TOPOLOGÍA Y USUARIOS
+   ========================================================= */
+const VERSIONS={cisco:['IOS-XE 17.9','IOS-XE 16.12','IOS 15.2'],mikrotik:['RouterOS 7.14','RouterOS 6.49'],huawei:['VRP V200R021','VRP V200R019'],juniper:['Junos 22.4R3','Junos 21.4R3'],aruba:['AOS-CX 10.13','AOS-CX 10.10']};
+let selectedVersionIdx=0;
+function renderVersionSelect(){
+  const sel=document.getElementById('cfg-version-select');
+  if(selectedBrandIdx===null){sel.innerHTML='';return;}
+  selectedVersionIdx=0;
+  sel.innerHTML=VERSIONS[EQUIPMENT_CATALOG[selectedBrandIdx].vendorKey].map((v,i)=>`<option value="${i}">${v}</option>`).join('');
+}
+document.getElementById('cfg-version-select').addEventListener('change',e=>{selectedVersionIdx=parseInt(e.target.value,10);renderVendorConfig();});
+
+const SEC_OPTS=[['ssh','SSHv2, sin Telnet/HTTP',1],['aaa','Usuario local / AAA',1],['l2','STP, BPDU guard, port security',1],['dhcpsnoop','DHCP Snooping',0],['snmp','SNMPv3',0],['ntp','NTP + Syslog',1],['api','NETCONF / HTTPS API',0],['trunk','Troncal de uplink',1],['dhcp','DHCP por VLAN',0]];
+const secOn=new Set(SEC_OPTS.filter(o=>o[2]).map(o=>o[0]));
+document.getElementById('sec-opts').innerHTML=SEC_OPTS.map(o=>`<label class="chk ${o[2]?'checked':''}" data-opt="${o[0]}">${o[1]}</label>`).join('');
+document.querySelectorAll('#sec-opts .chk').forEach(c=>c.addEventListener('click',()=>{const k=c.dataset.opt;secOn.has(k)?secOn.delete(k):secOn.add(k);c.classList.toggle('checked');renderVendorConfig();}));
+
+const SEC={
+cisco:{ssh:['ip domain-name netplan.local','crypto key generate rsa modulus 2048','ip ssh version 2','no ip http server','ip http secure-server','line vty 0 15',' transport input ssh',' login local',' exec-timeout 10 0','banner motd #Acceso autorizado solamente#'],aaa:['aaa new-model','aaa authentication login default local','username netadmin privilege 15 secret CAMBIAR_CLAVE','enable secret CAMBIAR_CLAVE','service password-encryption'],l2:['spanning-tree mode rapid-pvst','spanning-tree portfast default','spanning-tree portfast bpduguard default','errdisable recovery cause bpduguard'],snmp:['snmp-server group NETPLAN v3 priv','snmp-server user monitor NETPLAN v3 auth sha CAMBIAR_AUTH priv aes 128 CAMBIAR_PRIV'],ntp:['ntp server 0.pool.ntp.org','logging host 10.0.0.50','service timestamps log datetime msec'],api:['netconf-yang','restconf']},
+mikrotik:{ssh:['/ip ssh set strong-crypto=yes','/ip service disable telnet,ftp,www,api'],aaa:['/user add name=netadmin group=full password=CAMBIAR_CLAVE'],l2:['/interface bridge set bridge1 protocol-mode=rstp','/interface bridge port set [find] bpdu-guard=yes edge=yes'],snmp:['/snmp set enabled=yes','/snmp community add name=netplan authentication-protocol=SHA1 encryption-protocol=AES authentication-password=CAMBIAR_AUTH encryption-password=CAMBIAR_PRIV'],ntp:['/system ntp client set enabled=yes servers=0.pool.ntp.org','/system logging action add name=remoto target=remote remote=10.0.0.50','/system logging add topics=info action=remoto'],api:['/ip service enable www-ssl']},
+huawei:{ssh:['rsa local-key-pair create','stelnet server enable','undo telnet server enable','undo http server enable','ssh user netadmin authentication-type password','ssh user netadmin service-type stelnet','user-interface vty 0 4',' authentication-mode aaa',' protocol inbound ssh'],aaa:['aaa',' local-user netadmin password irreversible-cipher CAMBIAR_CLAVE',' local-user netadmin privilege level 15',' local-user netadmin service-type ssh'],l2:['stp mode rstp','stp bpdu-protection','stp edged-port default'],snmp:['snmp-agent sys-info version v3','snmp-agent group v3 NETPLAN privacy','snmp-agent usm-user v3 monitor group NETPLAN'],ntp:['ntp-service unicast-server 0.pool.ntp.org','info-center loghost 10.0.0.50'],api:['snetconf server enable','http secure-server enable']},
+juniper:{ssh:['set system services ssh protocol-version v2','set system services ssh root-login deny','delete system services telnet','delete system services web-management http'],aaa:['set system login user netadmin class super-user authentication plain-text-password','set system authentication-order password'],l2:['set protocols rstp bpdu-block-on-edge','set protocols rstp interface all edge'],snmp:['set snmp v3 usm local-engine user monitor authentication-sha authentication-password CAMBIAR_AUTH','set snmp v3 usm local-engine user monitor privacy-aes128 privacy-password CAMBIAR_PRIV'],ntp:['set system ntp server 0.pool.ntp.org','set system syslog host 10.0.0.50 any notice'],api:['set system services netconf ssh','set system services web-management https system-generated-certificate']},
+aruba:{ssh:['ssh server vrf default','no telnet server vrf default'],aaa:['user netadmin group administrators password plaintext CAMBIAR_CLAVE'],l2:['spanning-tree','spanning-tree mode rpvst'],snmp:['snmp-server vrf default','snmpv3 user monitor auth sha auth-pass plaintext CAMBIAR_AUTH priv aes priv-pass plaintext CAMBIAR_PRIV'],ntp:['ntp server 0.pool.ntp.org','logging 10.0.0.50'],api:['https-server vrf default','https-server rest access-mode read-write']}
+};
+
+function buildFullConfig(site,brand,model){
+  const vk=brand.vendorKey, ver=VERSIONS[vk][selectedVersionIdx], S=SEC[vk], n=site.plan.length;
+  const ids=site.plan.map((_,i)=>vlanIdForFloor(i)), names=site.plan.map(p=>p.name.replace(/\s+/g,'_').toUpperCase());
+  const up=`${model.ifacePrefix}${n+1}`, cm=(vk==='cisco'||vk==='aruba')?'!':'#';
+  const host=site.name.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').toUpperCase()+'-SW';
+  const o=[`${cm} NetPlan | ${site.name} | ${brand.brand} ${model.name} | ${ver}`,`${cm} IPv4 ${site.baseCidr} | IPv6 ${site.v6}::/48 | cambiar todos los valores CAMBIAR_* antes de aplicar`,''];
+  o.push(vk==='huawei'?`sysname ${host}`:vk==='mikrotik'?`/system identity set name=${host}`:vk==='juniper'?`set system host-name ${host}`:`hostname ${host}`);
+  if(vk==='cisco')o.push('ip routing','ipv6 unicast-routing');
+  if(vk==='mikrotik')o.push('/interface bridge add name=bridge1 vlan-filtering=yes');
+  ['ssh','aaa','l2','snmp','ntp','api'].forEach(k=>{if(secOn.has(k))o.push('',`${cm} -- ${SEC_OPTS.find(x=>x[0]===k)[1]}`,...S[k]);});
+  o.push('',`${cm} -- VLANs, SVI y puertos de acceso`,generateVendorCommands(site,vk,model));
+  o.push('',`${cm} -- IPv6 por VLAN`);
+  site.plan.forEach((p,i)=>{const id=ids[i],g=p.v6gw+'/64';
+    if(vk==='cisco')o.push(`interface Vlan${id}`,` ipv6 address ${g}`);
+    else if(vk==='huawei')o.push(`interface Vlanif${id}`,' ipv6 enable',` ipv6 address ${g}`);
+    else if(vk==='juniper')o.push(`set interfaces irb unit ${id} family inet6 address ${g}`);
+    else if(vk==='mikrotik')o.push(`/ipv6 address add address=${g} interface=vlan${id}-${p.name.replace(/\s+/g,'').toLowerCase()}`);
+    else o.push(`interface vlan ${id}`,` ipv6 address ${g}`);});
+  if(secOn.has('l2')&&vk==='cisco')o.push('',`interface range ${model.ifacePrefix}1 - ${n}`,' switchport port-security',' switchport port-security maximum 3',' switchport port-security violation restrict');
+  if(secOn.has('dhcpsnoop'))o.push('',`${cm} -- DHCP Snooping`,...({cisco:['ip dhcp snooping',`ip dhcp snooping vlan ${ids.join(',')}`,`ip arp inspection vlan ${ids.join(',')}`,`interface ${up}`,' ip dhcp snooping trust'],mikrotik:['/interface bridge set bridge1 dhcp-snooping=yes add-dhcp-option82=yes'],huawei:['dhcp enable','dhcp snooping enable',`dhcp snooping enable vlan ${ids.join(' ')}`],juniper:names.map(x=>`set vlans ${x} forwarding-options dhcp-security`),aruba:['dhcpv4-snooping']}[vk]));
+  if(secOn.has('trunk'))o.push('',`${cm} -- Troncal hacia distribución`,...({cisco:[`interface ${up}`,' switchport mode trunk',` switchport trunk allowed vlan ${ids.join(',')}`,' description UPLINK-DISTRIBUCION'],mikrotik:[`/interface bridge port add bridge=bridge1 interface=${up}`,`/interface bridge vlan add bridge=bridge1 tagged=${up},bridge1 vlan-ids=${ids.join(',')}`],huawei:[`interface ${up}`,' port link-type trunk',` port trunk allow-pass vlan ${ids.join(' ')}`],juniper:[`set interfaces ${up} unit 0 family ethernet-switching interface-mode trunk`,`set interfaces ${up} unit 0 family ethernet-switching vlan members [ ${names.join(' ')} ]`],aruba:[`interface ${up}`,' no routing',` vlan trunk allowed ${ids.join(',')}`]}[vk]));
+  if(secOn.has('dhcp')){o.push('',`${cm} -- DHCP por VLAN`);
+    if(vk==='cisco')site.plan.forEach(p=>o.push(`ip dhcp excluded-address ${p.firstHost}`,`ip dhcp pool ${p.name.replace(/\s+/g,'_').toUpperCase()}`,` network ${p.network} ${p.mask}`,` default-router ${p.firstHost}`,' dns-server 8.8.8.8'));
+    else if(vk==='mikrotik')site.plan.forEach((p,i)=>{const nm=`vlan${ids[i]}-${p.name.replace(/\s+/g,'').toLowerCase()}`;o.push(`/ip pool add name=pool-${ids[i]} ranges=${intToIp(ipToInt(p.firstHost)+1)}-${p.lastHost}`,`/ip dhcp-server add name=dhcp-${ids[i]} interface=${nm} address-pool=pool-${ids[i]} disabled=no`,`/ip dhcp-server network add address=${p.network}/${p.prefix} gateway=${p.firstHost} dns-server=8.8.8.8`);});
+    else o.push(`${cm} DHCP no incluido para ${brand.brand} en este prototipo`);}
+  return o.join('\n');
+}
+
+function siteTopoSvg(site){
+  const n=site.plan.length,W=Math.max(760,n*130),cx=W/2;
+  const box=(x,y,t,sub,c)=>`<rect x="${x-54}" y="${y-18}" width="108" height="36" rx="7" fill="var(--bg-elevated)" stroke="${c}" stroke-width="1.5"/><text x="${x}" y="${y-3}" text-anchor="middle" class="topo-node-label">${t}</text><text x="${x}" y="${y+10}" text-anchor="middle" class="topo-node-sub">${sub}</text>`;
+  const ln=(a,b,c,d)=>`<path class="topo-link" d="M${a},${b} L${c},${d}"/><path class="topo-pulse" d="M${a},${b} L${c},${d}"/>`;
+  let s=`<div class="table-scroll section-gap"><svg viewBox="0 0 ${W} 300" style="min-width:${W}px;width:100%;height:300px;background:var(--bg-panel);border:1px solid var(--border);border-radius:10px" xmlns="http://www.w3.org/2000/svg">`;
+  s+=ln(cx,48,cx,77)+ln(cx,113,cx,147)+box(cx,30,'ISP / WAN','MPLS','var(--amber)')+box(cx,95,'CORE','L3 + FW','var(--cyan)')+box(cx,165,'DISTRIBUCIÓN','L3 + VLANs','var(--cyan)');
+  site.plan.forEach((p,i)=>{const x=(i+1)*W/(n+1);s+=ln(cx,183,x,237)+box(x,255,p.name.length>14?p.name.slice(0,13)+'…':p.name,`${p.network}/${p.prefix}`,'var(--border)');});
+  return s+'</svg></div>';
+}
+
+function logSession(ev){state.sessions.unshift({time:new Date().toLocaleString('es-CO'),user:state.currentUser.name,role:state.currentUser.role,event:ev});}
+function renderUsers(){
+  document.getElementById('user-pill').textContent=`Usuario: ${state.currentUser.name} (${state.currentUser.role})`;
+  document.getElementById('users-list').innerHTML=`<table><thead><tr><th>Usuario</th><th>Rol</th><th>Acciones</th><th></th></tr></thead><tbody>${state.users.map(u=>`<tr><td>${u.name}</td><td><span class="tag cyan">${u.role}</span></td><td class="mono">${state.audit.filter(a=>a.user===u.name).length}</td><td>${u===state.currentUser?'<span class="tag amber">sesión activa</span>':`<button class="btn-ghost" data-login="${u.name}">Iniciar sesión</button>`}</td></tr>`).join('')}</tbody></table>`;
+  document.getElementById('sessions-table').innerHTML=`<table><thead><tr><th>Fecha</th><th>Usuario</th><th>Rol</th><th>Evento</th></tr></thead><tbody>${state.sessions.map(x=>`<tr><td class="mono">${x.time}</td><td>${x.user}</td><td>${x.role}</td><td>${x.event}</td></tr>`).join('')}</tbody></table>`;
+}
+document.getElementById('users-list').addEventListener('click',e=>{const nm=e.target.dataset.login;if(!nm)return;logSession('Cierre de sesión');state.currentUser=state.users.find(u=>u.name===nm);logSession('Inicio de sesión');renderUsers();});
+document.getElementById('btn-add-user').addEventListener('click',()=>{const el=document.getElementById('user-new-name'),nm=el.value.trim();if(!nm||state.users.some(u=>u.name===nm))return;const role=document.getElementById('user-new-role').value;state.users.push({name:nm,role});logAudit('CREAR_USUARIO',`${nm} (${role})`);el.value='';renderUsers();});
+document.querySelector('[data-view="usuarios"]').addEventListener('click',renderUsers);
+
 /* Init */
 renderClients();
 renderAudit();
 renderSites();
+logSession('Inicio de sesión'); renderUsers();
 </script>
 </body>
 </html>
