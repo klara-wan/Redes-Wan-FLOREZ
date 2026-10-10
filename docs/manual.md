@@ -14,7 +14,7 @@ NetPlan ayuda a diseñar una red: calcula el direccionamiento (VLSM IPv4 y /64 I
 ## 3. Cómo usarla (pestañas)
 | Pestaña | Para qué sirve |
 |---|---|
-| 01 Topología | Diagrama de los clientes creados. |
+| 01 Topología | Diagrama de los clientes creados y panel "Cargar topología": pega o carga un JSON con dispositivos y enlaces; se valida y se dibuja. |
 | 02 Clientes | Alta de un cliente con usuarios y servicios (datos, voz, video, IoT); asigna subred y VLAN. |
 | 03 Sedes (VLSM) | Ingresa nombre, bloque base (ej. `172.16.0.0/21`), prefijo IPv6 y los pisos con sus usuarios. Muestra la tabla VLSM y el diagrama de la sede. El botón **Editar** carga la sede en el formulario para cambiarla. |
 | 04 Configuración | Elige sede, marca, modelo, versión y opciones de seguridad; muestra los comandos listos para copiar. |
@@ -52,4 +52,13 @@ Parte de 100% y resta por cada debilidad (sin redundancia, un solo ISP, sin marg
 ## 9. Limitaciones actuales
 - El envío por SSH está simulado: los comandos se copian y se pegan a mano.
 - Los roles de usuario son informativos; no hay inicio de sesión real.
-- La importación de topologías y la marca Fortinet en la interfaz web están pendientes (Fortinet sí se genera en el backend).
+- La marca Fortinet en la interfaz web está pendiente (sí se genera en el backend).
+
+## 10. Formato de la topología
+```json
+{"devices":[{"name":"CORE-1","role":"core","vendor":"cisco","ip":"10.0.0.1"},{"name":"ACC-1","role":"access"}],
+ "links":[{"a":"CORE-1","b":"ACC-1","type":"trunk"}]}
+```
+- Roles: isp, firewall, router, core, distribution, access, server. Tipos de enlace: wan, lan, trunk.
+- Nombres: solo letras, números, `-` y `_` (máx. 30). No se permiten nombres ni enlaces repetidos, ni enlaces a equipos que no existen.
+- Si algo es inválido, la herramienta muestra el motivo y no dibuja nada. Las advertencias (equipo aislado, un solo core, sin ISP) no bloquean la carga.
