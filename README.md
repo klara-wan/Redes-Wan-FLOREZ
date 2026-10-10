@@ -1,6 +1,6 @@
 # NetPlan — Herramienta de diseño y gestión de redes WAN
 
-**Autor:** _TU NOMBRE_ · **Repositorio:** _ENLACE DEL REPOSITORIO_
+**Autor:** Kevin Santiago Lara Florez· **Repositorio:** https://github.com/klara-wan/Redes-Wan-FLOREZ.git
 
 Calcula subnetting VLSM (IPv4/IPv6), genera configuraciones por equipo para Cisco, Huawei, Fortinet y MikroTik (además de Juniper y Aruba), evalúa el diseño de forma crítica y exporta Excel y Word. Ciberdefensa integrada (ver docs/politicas-ia.md).
 
