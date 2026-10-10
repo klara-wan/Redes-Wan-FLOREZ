@@ -4,7 +4,7 @@ from ipaddress import ip_network, ip_address
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
-Vendor = Literal["cisco", "mikrotik", "huawei", "juniper", "aruba"]
+Vendor = Literal["cisco", "mikrotik", "huawei", "juniper", "aruba", "fortinet"]
 
 
 class Floor(BaseModel):
