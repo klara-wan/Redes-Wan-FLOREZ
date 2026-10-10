@@ -8,6 +8,7 @@ from fastapi.responses import Response
 
 from . import advisor, configs, engine, exports
 from .schemas import Project
+from .topology import Topology, analyze_topology
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("netplan")
@@ -55,3 +56,9 @@ def export_docx(p: Project) -> Response:
     data = exports.build_docx(p, r["plan"], r["classification"], r["evaluation"])
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     headers={"Content-Disposition": 'attachment; filename="infraestructura_red.docx"'})
+
+
+@app.post("/api/topology/validate")
+def validate_topology(t: Topology) -> dict:
+    """Valida una topología importada (formato, nombres, IPs, enlaces) y devuelve advertencias de diseño."""
+    return {"devices": len(t.devices), "links": len(t.links), "warnings": analyze_topology(t)}
