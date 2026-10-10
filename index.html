@@ -269,6 +269,18 @@
       <p class="view-desc">Vista generada automáticamente a partir del plan de clientes, sitios y enlaces activos. Los pulsos representan tráfico simulado sobre cada enlace.</p>
       <div class="grid-3" id="topo-kpis"></div>
       <svg id="topo-svg" viewBox="0 0 900 420" preserveAspectRatio="xMidYMid meet"></svg>
+
+      <div class="panel section-gap">
+        <div class="kpi-label" style="margin-bottom:10px;">Cargar topología (dispositivos y enlaces)</div>
+        <p class="view-desc" style="margin-bottom:12px;">Pega un JSON con "devices" y "links", o carga un archivo .json. Se valida antes de dibujar.</p>
+        <textarea id="tp-text" rows="9" placeholder='{"devices":[...],"links":[...]}' style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);padding:9px;border-radius:7px;font-family:var(--mono);font-size:12px;outline:none"></textarea>
+        <div class="flex-between section-gap">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-ghost" id="tp-example">Cargar ejemplo</button><input type="file" id="tp-file" accept=".json,application/json" style="width:auto"></div>
+          <button class="btn-primary" id="tp-draw">Validar y dibujar</button>
+        </div>
+        <div id="tp-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
+        <div id="tp-out" class="section-gap"></div>
+      </div>
     </section>
 
     <!-- ===================== VISTA: CLIENTES ===================== -->
@@ -1325,6 +1337,65 @@ document.getElementById('sites-output').addEventListener('click',e=>{
   document.getElementById('site-name').value=site.name;document.getElementById('site-cidr').value=site.baseCidr;document.getElementById('site-v6').value=site.v6;
   document.getElementById('floor-rows').innerHTML='';site.floors.forEach(f=>addFloorRow(f.name,f.users));
   state.sites=state.sites.filter(x=>x!==site);logAudit('EDITAR_SEDE',site.name);renderSites();window.scrollTo(0,0);
+});
+
+/* =========================================================
+   CARGA DE TOPOLOGÍA: valida (entrada no confiable), advierte y dibuja
+   ========================================================= */
+const TP_ROLES=['isp','firewall','router','core','distribution','access','server'];
+const TP_EXAMPLE={devices:[{name:'ISP-1',role:'isp'},{name:'FW-1',role:'firewall',vendor:'fortinet',ip:'10.0.0.2'},{name:'CORE-1',role:'core',vendor:'cisco',ip:'10.0.0.1'},{name:'DIST-1',role:'distribution',vendor:'huawei',ip:'10.0.1.1'},{name:'ACC-1',role:'access',vendor:'cisco',ip:'10.0.2.1'},{name:'ACC-2',role:'access',vendor:'mikrotik',ip:'10.0.2.2'}],links:[{a:'ISP-1',b:'FW-1',type:'wan'},{a:'FW-1',b:'CORE-1'},{a:'CORE-1',b:'DIST-1',type:'trunk'},{a:'DIST-1',b:'ACC-1',type:'trunk'},{a:'DIST-1',b:'ACC-2',type:'trunk'}]};
+function tpValidate(raw){
+  let d;try{d=JSON.parse(raw);}catch(e){throw new Error('El texto no es un JSON válido.');}
+  if(!d||!Array.isArray(d.devices)||d.devices.length<1||d.devices.length>200)throw new Error('Se requiere "devices" con 1 a 200 equipos.');
+  const links=Array.isArray(d.links)?d.links:[];if(links.length>1000)throw new Error('Máximo 1000 enlaces.');
+  const NAME=/^[A-Za-z0-9][A-Za-z0-9_-]{0,29}$/,names=new Set(),V=['','cisco','huawei','fortinet','mikrotik','juniper','aruba'];
+  d.devices.forEach(v=>{
+    if(typeof v.name!=='string'||!NAME.test(v.name))throw new Error('Nombre inválido (solo letras, números, - y _; máx. 30): '+String(v.name).slice(0,30));
+    if(names.has(v.name))throw new Error('Nombre repetido: '+v.name);
+    if(!TP_ROLES.includes(v.role))throw new Error('Rol inválido en '+v.name+'. Use: '+TP_ROLES.join(', '));
+    if(v.vendor&&!V.includes(String(v.vendor).toLowerCase()))throw new Error('Marca no soportada en '+v.name);
+    if(v.ip&&(!/^(\d{1,3}\.){3}\d{1,3}$/.test(v.ip)||v.ip.split('.').some(o=>+o>255)))throw new Error('IP inválida en '+v.name);
+    names.add(v.name);});
+  const seen=new Set();
+  links.forEach(l=>{
+    if(!names.has(l.a)||!names.has(l.b))throw new Error('Enlace con equipo inexistente: '+String(l.a).slice(0,30)+' - '+String(l.b).slice(0,30));
+    if(l.a===l.b)throw new Error('Un equipo no puede enlazarse consigo mismo: '+l.a);
+    const k=[l.a,l.b].sort().join('|');if(seen.has(k))throw new Error('Enlace repetido: '+l.a+' - '+l.b);seen.add(k);});
+  return {devices:d.devices,links};
+}
+function tpWarnings(t){
+  const deg={},w=[];t.devices.forEach(v=>deg[v.name]=0);t.links.forEach(l=>{deg[l.a]++;deg[l.b]++;});
+  if(t.devices.length>1)t.devices.filter(v=>deg[v.name]===0).forEach(v=>w.push(v.name+' no tiene enlaces (equipo aislado).'));
+  const cores=t.devices.filter(v=>v.role==='core').length;
+  if(!cores)w.push('No hay equipo core.');else if(cores===1&&t.devices.some(v=>v.role==='access'))w.push('Un solo core: punto único de falla.');
+  if(!t.devices.some(v=>v.role==='isp'))w.push('No hay ISP/WAN definido.');
+  return w;
+}
+function tpRender(t){
+  const L={isp:0,firewall:1,router:1,core:2,distribution:3,access:4,server:4},W=900,H=420,pos={},layers={};
+  t.devices.forEach(v=>(layers[L[v.role]]=layers[L[v.role]]||[]).push(v));
+  Object.entries(layers).forEach(([k,arr])=>arr.forEach((v,i)=>pos[v.name]={x:(i+1)*W/(arr.length+1),y:40+k*85}));
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;background:var(--bg-panel);border:1px solid var(--border);border-radius:10px">`;
+  t.links.forEach(l=>{const a=pos[l.a],b=pos[l.b];s+=`<path class="topo-link" d="M${a.x},${a.y} L${b.x},${b.y}" ${l.type==='wan'?'style="stroke:var(--amber);stroke-dasharray:6 4"':''}/><path class="topo-pulse" d="M${a.x},${a.y} L${b.x},${b.y}"/>`;});
+  t.devices.forEach(v=>{const p=pos[v.name];s+=`<rect x="${p.x-58}" y="${p.y-20}" width="116" height="40" rx="7" fill="var(--bg-elevated)" stroke="var(--cyan)" stroke-width="1.5"/><text x="${p.x}" y="${p.y-4}" text-anchor="middle" class="topo-node-label">${esc(v.name)}</text><text x="${p.x}" y="${p.y+10}" text-anchor="middle" class="topo-node-sub">${esc(v.role)}${v.ip?' · '+esc(v.ip):''}</text>`;});
+  return s+'</svg>';
+}
+document.getElementById('tp-example').addEventListener('click',()=>{document.getElementById('tp-text').value=JSON.stringify(TP_EXAMPLE,null,2);});
+document.getElementById('tp-file').addEventListener('change',e=>{
+  const f=e.target.files[0],err=document.getElementById('tp-error');err.style.display='none';
+  if(!f)return;if(f.size>200000){err.textContent='El archivo supera 200 KB.';err.style.display='block';return;}
+  const r=new FileReader();r.onload=()=>{document.getElementById('tp-text').value=String(r.result);};r.readAsText(f);
+});
+document.getElementById('tp-draw').addEventListener('click',()=>{
+  const err=document.getElementById('tp-error'),out=document.getElementById('tp-out');err.style.display='none';
+  try{
+    const t=tpValidate(document.getElementById('tp-text').value),w=tpWarnings(t);
+    out.innerHTML=`<div class="kpi-label" style="margin-bottom:8px">${t.devices.length} dispositivos · ${t.links.length} enlaces</div>`+
+      (w.length?`<div style="color:var(--amber);font-size:12.5px;margin-bottom:10px">${w.map(x=>'Advertencia: '+esc(x)).join('<br>')}</div>`:'')+tpRender(t)+
+      `<div class="grid-2 section-gap"><div><table><thead><tr><th>Dispositivo</th><th>Rol</th><th>Marca</th><th>IP</th></tr></thead><tbody>${t.devices.map(v=>`<tr><td>${esc(v.name)}</td><td>${esc(v.role)}</td><td>${esc(v.vendor||'-')}</td><td class="mono">${esc(v.ip||'-')}</td></tr>`).join('')}</tbody></table></div>`+
+      `<div><table><thead><tr><th>Enlace</th><th>Tipo</th></tr></thead><tbody>${t.links.map(l=>`<tr><td>${esc(l.a)} — ${esc(l.b)}</td><td>${esc(l.type||'lan')}</td></tr>`).join('')}</tbody></table></div></div>`;
+    logAudit('CARGAR_TOPOLOGIA',`${t.devices.length} dispositivos, ${t.links.length} enlaces`);
+  }catch(e){out.innerHTML='';err.textContent=e.message;err.style.display='block';}
 });
 
 /* Init */
