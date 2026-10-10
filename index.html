@@ -258,6 +258,7 @@
     <div class="nav-item" data-view="auditoria"><span class="nav-num">05</span>Auditoría</div>
     <div class="nav-item" data-view="agente"><span class="nav-num">06</span>Agente IA</div>
     <div class="nav-item" data-view="usuarios"><span class="nav-num">07</span>Usuarios</div>
+    <div class="nav-item" data-view="proyecto"><span class="nav-num">08</span>Proyecto</div>
   </nav>
 
   <main>
@@ -423,6 +424,26 @@
         <div class="panel" id="users-list"></div>
       </div>
       <div class="panel section-gap"><div class="kpi-label" style="margin-bottom:10px;">Historial de sesiones</div><div id="sessions-table"></div></div>
+    </section>
+
+    <!-- ===================== VISTA: PROYECTO (backend) ===================== -->
+    <section class="view" id="view-proyecto">
+      <h1>Evaluación del proyecto</h1>
+      <p class="view-desc">El backend clasifica la red (empresarial o pequeña), la evalúa de forma crítica, genera los comandos de cada equipo y exporta Excel y Word. Puedes editar la sede y volver a evaluar cuando quieras.</p>
+      <div class="panel">
+        <div class="grid-2"><div>
+          <label>Sede</label><select id="pj-site"></select>
+          <label>Marca</label><select id="pj-vendor"></select>
+          <label>Versión</label><select id="pj-version"></select>
+        </div><div>
+          <label>Crecimiento esperado (%)</label><input type="number" id="pj-growth" value="20" min="0">
+          <label>Diseño</label><div class="checks"><label class="chk" id="pj-red">Redundancia core/distribución</label><label class="chk" id="pj-isp">ISP redundante</label></div>
+          <label>URL del backend</label><input type="text" id="pj-url" value="http://localhost:8000">
+        </div></div>
+        <button class="btn-primary section-gap" id="pj-run" style="width:100%">Analizar proyecto</button>
+        <div id="pj-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
+      </div>
+      <div id="pj-result" class="section-gap"></div>
     </section>
 
     <!-- ===================== VISTA: AUDITORÍA ===================== -->
@@ -882,7 +903,7 @@ function renderSites(){
       <details class="site-card" open>
         <summary>
           <span>${site.name} — <span style="color:var(--text-dim)">${site.baseCidr}</span></span>
-          <span class="tag cyan">${site.totals.utilization.toFixed(1)}% usado</span>
+          <span><span class="tag cyan">${site.totals.utilization.toFixed(1)}% usado</span> <button class="btn-ghost" data-edit="${site.id}" style="padding:4px 10px">Editar</button></span>
         </summary>
         <div class="util-bar"><div class="util-fill" style="width:${Math.min(site.totals.utilization,100).toFixed(1)}%"></div></div>
         ${siteTopoSvg(site)}<div class="table-scroll section-gap">
@@ -1247,6 +1268,64 @@ function renderUsers(){
 document.getElementById('users-list').addEventListener('click',e=>{const nm=e.target.dataset.login;if(!nm)return;logSession('Cierre de sesión');state.currentUser=state.users.find(u=>u.name===nm);logSession('Inicio de sesión');renderUsers();});
 document.getElementById('btn-add-user').addEventListener('click',()=>{const el=document.getElementById('user-new-name'),nm=el.value.trim();if(!nm||state.users.some(u=>u.name===nm))return;const role=document.getElementById('user-new-role').value;state.users.push({name:nm,role});logAudit('CREAR_USUARIO',`${nm} (${role})`);el.value='';renderUsers();});
 document.querySelector('[data-view="usuarios"]').addEventListener('click',renderUsers);
+
+/* =========================================================
+   PROYECTO: consume el backend FastAPI (/backend) + edición de sedes
+   ========================================================= */
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.getElementById('pj-vendor').innerHTML=EQUIPMENT_CATALOG.map(b=>`<option value="${b.vendorKey}">${b.brand}</option>`).join('');
+function pjVersions(){document.getElementById('pj-version').innerHTML=VERSIONS[document.getElementById('pj-vendor').value].map(v=>`<option>${v}</option>`).join('');}
+document.getElementById('pj-vendor').addEventListener('change',pjVersions);pjVersions();
+['pj-red','pj-isp'].forEach(id=>document.getElementById(id).addEventListener('click',e=>e.currentTarget.classList.toggle('checked')));
+document.querySelector('[data-view="proyecto"]').addEventListener('click',()=>{
+  document.getElementById('pj-site').innerHTML=state.sites.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');});
+let pjData=null;
+function pjPayload(){
+  const site=state.sites.find(x=>String(x.id)===document.getElementById('pj-site').value);
+  if(!site)throw new Error('Calcula primero una sede en "Sedes (VLSM)".');
+  return {name:site.name,base_cidr:site.baseCidr,v6_prefix:site.v6,floors:site.floors,vendor:document.getElementById('pj-vendor').value,
+    version:document.getElementById('pj-version').value,redundancy:document.getElementById('pj-red').classList.contains('checked'),
+    dual_isp:document.getElementById('pj-isp').classList.contains('checked'),growth_pct:parseInt(document.getElementById('pj-growth').value,10)||0};
+}
+const pjUrl=path=>document.getElementById('pj-url').value.replace(/\/$/,'')+path;
+async function pjCall(path){
+  const r=await fetch(pjUrl(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pjPayload())});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(typeof e.detail==='string'?e.detail:'Datos inválidos (revisa el bloque CIDR: debe ser una dirección de red exacta).');}
+  return r;
+}
+document.getElementById('pj-run').addEventListener('click',async()=>{
+  const err=document.getElementById('pj-error');err.style.display='none';
+  try{
+    pjData=await (await pjCall('/api/projects/analyze')).json();
+    const ev=pjData.evaluation,c=pjData.classification,col=ev.score<60?'var(--red)':ev.score<80?'var(--amber)':'var(--green)';
+    document.getElementById('pj-result').innerHTML=`
+      <div class="grid-3"><div class="kpi"><div class="kpi-label">Éxito del proyecto</div><div class="kpi-value" style="color:${col}">${ev.score}%</div><div class="kpi-label" style="margin-top:6px">${esc(ev.verdict)}</div></div>
+      <div class="kpi"><div class="kpi-label">Tipo de red</div><div class="kpi-value">${esc(c.type)}</div></div>
+      <div class="kpi"><div class="kpi-label">Usuarios / áreas</div><div class="kpi-value">${c.total_users} / ${c.floors}</div></div></div>
+      <div class="panel"><div class="kpi-label" style="margin-bottom:10px">Por qué: ${esc(c.reasons.join('; '))} · Protocolos: ${esc(c.routing.join(', '))}</div>
+        <div class="kpi-label" style="margin:14px 0 8px">Aspectos a mejorar (el asesor es deliberadamente crítico)</div>
+        <table><thead><tr><th>Severidad</th><th>Área</th><th>Problema</th><th>Mejora</th><th>−%</th></tr></thead><tbody>
+        ${ev.findings.map(f=>`<tr><td><span class="tag ${f.severity==='crítico'?'amber':'cyan'}">${esc(f.severity)}</span></td><td>${esc(f.area)}</td><td>${esc(f.issue)}</td><td style="color:var(--text-secondary)">${esc(f.fix)}</td><td class="mono">${f.penalty}</td></tr>`).join('')}
+        </tbody></table></div>
+      <div class="panel section-gap"><label>Comandos por equipo</label><select id="pj-dev">${Object.keys(pjData.devices).map(d=>`<option>${esc(d)}</option>`).join('')}</select>
+        <div class="diff-box section-gap" id="pj-cfg" style="max-height:420px"></div>
+        <div class="flex-between section-gap"><button class="btn-ghost" id="pj-xlsx">Descargar Excel (VLSM)</button><button class="btn-ghost" id="pj-docx">Descargar documento Word</button></div></div>`;
+    const showDev=()=>{document.getElementById('pj-cfg').textContent=pjData.devices[document.getElementById('pj-dev').value];};
+    document.getElementById('pj-dev').addEventListener('change',showDev);showDev();
+    [['pj-xlsx','xlsx','enrutamiento_vlsm.xlsx'],['pj-docx','docx','infraestructura_red.docx']].forEach(([id,k,fn])=>
+      document.getElementById(id).addEventListener('click',async()=>{try{const b=await (await pjCall('/api/projects/export/'+k)).blob();
+        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;a.click();}catch(e){err.textContent=e.message;err.style.display='block';}}));
+    logAudit('EVALUAR_PROYECTO',`${pjPayload().name} → ${ev.score}% (${c.type})`);
+  }catch(e){err.textContent=(e instanceof TypeError)?'No se pudo conectar al backend. Inícialo con: cd backend && uvicorn app.main:app --port 8000':e.message;err.style.display='block';}
+});
+/* Editar sede: carga los datos en el formulario para que el cliente cambie la infraestructura en cualquier momento */
+document.getElementById('sites-output').addEventListener('click',e=>{
+  const id=e.target.dataset&&e.target.dataset.edit;if(!id)return;e.preventDefault();
+  const site=state.sites.find(x=>String(x.id)===id);if(!site)return;
+  document.getElementById('site-name').value=site.name;document.getElementById('site-cidr').value=site.baseCidr;document.getElementById('site-v6').value=site.v6;
+  document.getElementById('floor-rows').innerHTML='';site.floors.forEach(f=>addFloorRow(f.name,f.users));
+  state.sites=state.sites.filter(x=>x!==site);logAudit('EDITAR_SEDE',site.name);renderSites();window.scrollTo(0,0);
+});
 
 /* Init */
 renderClients();
