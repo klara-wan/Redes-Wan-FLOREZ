@@ -5,7 +5,7 @@ from ipaddress import IPv4Network
 from .schemas import Project
 
 IFACE = {"cisco": "GigabitEthernet1/0/", "mikrotik": "ether", "huawei": "GigabitEthernet0/0/",
-         "juniper": "ge-0/0/", "aruba": "1/1/"}
+         "juniper": "ge-0/0/", "aruba": "1/1/", "fortinet": "port"}
 COMMENT = {"cisco": "!", "aruba": "!"}  # el resto usa '#'
 
 # Claves: host, harden (base de seguridad), vlan, svi, access, trunk, static (ruta por defecto),
@@ -61,6 +61,16 @@ SYNTAX = {
   "static": "ip route 0.0.0.0/0 {isp_ip}",
   "ospf": "router ospf 1\n router-id {rid}\n area 0.0.0.0", "ospf_net": "interface vlan {id}\n ip ospf 1 area 0.0.0.0",
   "bgp": "router bgp {asn}\n neighbor {isp_ip} remote-as {isp_as}\n address-family ipv4 unicast\n  network {bnet}/{bpfx}\n  neighbor {isp_ip} activate"},
+ "fortinet": {
+  "host": "config system global\n set hostname {n}\nend",
+  "harden": "config system global\n set admintimeout 10\n set strong-crypto enable\nend\nconfig system admin\n edit \"netadmin\"\n  set accprofile \"super_admin\"\n  set password CAMBIAR_CLAVE\n next\nend\nconfig system ntp\n set ntpsync enable\nend\nconfig log syslogd setting\n set status enable\n set server 10.0.0.50\nend\nconfig system snmp user\n edit \"monitor\"\n  set security-level auth-priv\n  set auth-proto sha\n  set auth-pwd CAMBIAR_AUTH\n  set priv-proto aes\n  set priv-pwd CAMBIAR_PRIV\n next\nend\nconfig system interface\n edit \"port1\"\n  set allowaccess ping ssh https\n next\nend",
+  "vlan": "config system interface\n edit \"vlan{id}\"\n  set vdom \"root\"\n  set interface \"{parent}\"\n  set vlanid {id}\n  set alias \"{name}\"\n  set ip {gw4} {mask}\n  set allowaccess ping\n  config ipv6\n   set ip6-address {gw6}/64\n  end\n next\nend",
+  "svi": "# FortiOS: la IP y el IPv6 ya quedaron definidos en la interfaz VLAN {id}",
+  "access": "# FortiGate es firewall: los puertos de acceso se gestionan con FortiSwitch (switch-controller)",
+  "trunk": "config system interface\n edit \"{port}\"\n  set allowaccess ping\n next\nend",
+  "static": "config router static\n edit 1\n  set gateway {isp_ip}\n  set device \"port1\"\n next\nend",
+  "ospf": "config router ospf\n set router-id {rid}\n config area\n  edit 0.0.0.0\n  next\n end\nend", "ospf_net": "config router ospf\n config network\n  edit {id}\n   set prefix {net} {mask}\n  next\n end\nend",
+  "bgp": "config router bgp\n set as {asn}\n config neighbor\n  edit {isp_ip}\n   set remote-as {isp_as}\n  next\n end\n config network\n  edit 1\n   set prefix {bnet} {bmask}\n  next\n end\nend"},
 }
 
 
@@ -76,7 +86,7 @@ def build_devices(p: Project, rows: list[dict], cls: dict) -> dict[str, str]:
     ids = [r["vlan"] for r in rows]
     common = dict(isp_ip=p.isp_ip, isp_as=p.isp_as, asn=p.local_as, bnet=str(base.network_address),
                   bmask=str(base.netmask), bpfx=base.prefixlen, ids=",".join(map(str, ids)),
-                  ids_sp=" ".join(map(str, ids)), names=" ".join(r["name"].replace(" ", "_").upper() for r in rows))
+                  ids_sp=" ".join(map(str, ids)), parent=f"{pre}2", names=" ".join(r["name"].replace(" ", "_").upper() for r in rows))
 
     def vr(r):  # variables de una VLAN
         net = IPv4Network(f"{r['network']}/{r['prefix']}")
