@@ -259,6 +259,7 @@
     <div class="nav-item" data-view="agente"><span class="nav-num">06</span>Agente IA</div>
     <div class="nav-item" data-view="usuarios"><span class="nav-num">07</span>Usuarios</div>
     <div class="nav-item" data-view="proyecto"><span class="nav-num">08</span>Proyecto</div>
+    <div class="nav-item" data-view="seguridad"><span class="nav-num">09</span>Seguridad</div>
   </nav>
 
   <main>
@@ -456,6 +457,18 @@
         <div id="pj-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
       </div>
       <div id="pj-result" class="section-gap"></div>
+    </section>
+
+    <!-- ===================== VISTA: SEGURIDAD ===================== -->
+    <section class="view" id="view-seguridad">
+      <h1>Auditor de seguridad</h1>
+      <p class="view-desc">Pega una configuración de cualquier marca y la herramienta advierte los ajustes inseguros: Telnet, HTTP, SNMP v2c, claves incrustadas y ACL abiertas. Requiere el backend encendido. Los secretos nunca se muestran: se enmascaran.</p>
+      <div class="panel">
+        <textarea id="sa-text" rows="10" placeholder="Pega aquí la configuración" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);padding:9px;border-radius:7px;font-family:var(--mono);font-size:12px;outline:none"></textarea>
+        <div class="flex-between section-gap"><button class="btn-ghost" id="sa-example">Cargar ejemplo inseguro</button><button class="btn-primary" id="sa-run">Auditar configuración</button></div>
+        <div id="sa-error" style="color:var(--red); font-size:12px; margin-top:8px; display:none;"></div>
+        <div id="sa-out" class="section-gap"></div>
+      </div>
     </section>
 
     <!-- ===================== VISTA: AUDITORÍA ===================== -->
@@ -1210,7 +1223,7 @@ addChatMessage('agent', `Hola, soy el agente de planeación. Puedo crear cliente
 /* =========================================================
    VERSIONES, SEGURIDAD, ACCESO REMOTO, TOPOLOGÍA Y USUARIOS
    ========================================================= */
-const VERSIONS={cisco:['IOS-XE 17.9','IOS-XE 16.12','IOS 15.2'],mikrotik:['RouterOS 7.14','RouterOS 6.49'],huawei:['VRP V200R021','VRP V200R019'],juniper:['Junos 22.4R3','Junos 21.4R3'],aruba:['AOS-CX 10.13','AOS-CX 10.10']};
+const VERSIONS={cisco:['IOS-XE 17.9','IOS-XE 16.12','IOS 15.2'],mikrotik:['RouterOS 7.14','RouterOS 6.49'],huawei:['VRP V200R021','VRP V200R019'],juniper:['Junos 22.4R3','Junos 21.4R3'],aruba:['AOS-CX 10.13','AOS-CX 10.10'],fortinet:['FortiOS 7.4','FortiOS 7.2','FortiOS 6.4']};
 let selectedVersionIdx=0;
 function renderVersionSelect(){
   const sel=document.getElementById('cfg-version-select');
@@ -1285,7 +1298,7 @@ document.querySelector('[data-view="usuarios"]').addEventListener('click',render
    PROYECTO: consume el backend FastAPI (/backend) + edición de sedes
    ========================================================= */
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-document.getElementById('pj-vendor').innerHTML=EQUIPMENT_CATALOG.map(b=>`<option value="${b.vendorKey}">${b.brand}</option>`).join('');
+document.getElementById('pj-vendor').innerHTML=[...EQUIPMENT_CATALOG.map(b=>`<option value="${b.vendorKey}">${b.brand}</option>`),'<option value="fortinet">Fortinet</option>'].join('');
 function pjVersions(){document.getElementById('pj-version').innerHTML=VERSIONS[document.getElementById('pj-vendor').value].map(v=>`<option>${v}</option>`).join('');}
 document.getElementById('pj-vendor').addEventListener('change',pjVersions);pjVersions();
 ['pj-red','pj-isp'].forEach(id=>document.getElementById(id).addEventListener('click',e=>e.currentTarget.classList.toggle('checked')));
@@ -1320,9 +1333,9 @@ document.getElementById('pj-run').addEventListener('click',async()=>{
         ${ev.findings.map(f=>`<tr><td><span class="tag ${f.severity==='crítico'?'amber':'cyan'}">${esc(f.severity)}</span></td><td>${esc(f.area)}</td><td>${esc(f.issue)}</td><td style="color:var(--text-secondary)">${esc(f.fix)}</td><td class="mono">${f.penalty}</td></tr>`).join('')}
         </tbody></table></div>
       <div class="panel section-gap"><label>Comandos por equipo</label><select id="pj-dev">${Object.keys(pjData.devices).map(d=>`<option>${esc(d)}</option>`).join('')}</select>
-        <div class="diff-box section-gap" id="pj-cfg" style="max-height:420px"></div>
+        <div id="pj-sec" class="kpi-label section-gap"></div><div class="diff-box section-gap" id="pj-cfg" style="max-height:420px"></div>
         <div class="flex-between section-gap"><button class="btn-ghost" id="pj-xlsx">Descargar Excel (VLSM)</button><button class="btn-ghost" id="pj-docx">Descargar documento Word</button></div></div>`;
-    const showDev=()=>{document.getElementById('pj-cfg').textContent=pjData.devices[document.getElementById('pj-dev').value];};
+    const showDev=()=>{const dv=document.getElementById('pj-dev').value,sc=pjData.security[dv];document.getElementById('pj-cfg').textContent=pjData.devices[dv];document.getElementById('pj-sec').textContent='Auditoría de seguridad del equipo: '+(sc.alto+sc.medio===0?'sin hallazgos':sc.alto+' alto(s), '+sc.medio+' medio(s)');};
     document.getElementById('pj-dev').addEventListener('change',showDev);showDev();
     [['pj-xlsx','xlsx','enrutamiento_vlsm.xlsx'],['pj-docx','docx','infraestructura_red.docx']].forEach(([id,k,fn])=>
       document.getElementById(id).addEventListener('click',async()=>{try{const b=await (await pjCall('/api/projects/export/'+k)).blob();
@@ -1396,6 +1409,23 @@ document.getElementById('tp-draw').addEventListener('click',()=>{
       `<div><table><thead><tr><th>Enlace</th><th>Tipo</th></tr></thead><tbody>${t.links.map(l=>`<tr><td>${esc(l.a)} — ${esc(l.b)}</td><td>${esc(l.type||'lan')}</td></tr>`).join('')}</tbody></table></div></div>`;
     logAudit('CARGAR_TOPOLOGIA',`${t.devices.length} dispositivos, ${t.links.length} enlaces`);
   }catch(e){out.innerHTML='';err.textContent=e.message;err.style.display='block';}
+});
+
+/* =========================================================
+   AUDITOR DE SEGURIDAD (usa el backend: /api/security/audit)
+   ========================================================= */
+const SA_EXAMPLE="hostname SW-DEMO\nip http server\nsnmp-server community public RO\nusername admin password Cisco123\nline vty 0 4\n transport input telnet\nip access-list extended TODO\n permit ip any any";
+document.getElementById('sa-example').addEventListener('click',()=>{document.getElementById('sa-text').value=SA_EXAMPLE;});
+document.getElementById('sa-run').addEventListener('click',async()=>{
+  const err=document.getElementById('sa-error'),out=document.getElementById('sa-out');err.style.display='none';
+  try{
+    const r=await fetch(pjUrl('/api/security/audit'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:document.getElementById('sa-text').value})});
+    if(!r.ok)throw new Error('Entrada inválida (¿demasiado grande?).');
+    const d=await r.json(),c=d.counts;
+    out.innerHTML=`<div class="kpi-label" style="margin-bottom:8px;color:${c.alto?'var(--red)':c.medio?'var(--amber)':'var(--green)'}">${d.findings.length?`${c.alto} hallazgo(s) alto(s) · ${c.medio} medio(s)`:'Sin hallazgos de seguridad'}</div>`+
+      (d.findings.length?`<table><thead><tr><th>Severidad</th><th>Línea</th><th>Problema</th><th>Texto (secretos enmascarados)</th></tr></thead><tbody>${d.findings.map(f=>`<tr><td><span class="tag ${f.severity==='alto'?'amber':'cyan'}">${esc(f.severity)}</span></td><td class="mono">${f.line||'-'}</td><td>${esc(f.message)}</td><td class="mono">${esc(f.text)}</td></tr>`).join('')}</tbody></table>`:'');
+    logAudit('AUDITAR_CONFIG',`${c.alto} altos, ${c.medio} medios`);
+  }catch(e){out.innerHTML='';err.textContent=(e instanceof TypeError)?'No se pudo conectar al backend. Inícialo con: cd backend && uvicorn app.main:app --port 8000':e.message;err.style.display='block';}
 });
 
 /* Init */
