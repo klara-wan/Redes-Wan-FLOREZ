@@ -5,9 +5,11 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from . import advisor, configs, engine, exports
 from .schemas import Project
+from .security_audit import audit
 from .topology import Topology, analyze_topology
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -28,7 +30,10 @@ def _run(p: Project) -> dict:
     cls = engine.classify(p, rows)
     ev = advisor.evaluate(p, rows, cls)
     log.info("proyecto=%s tipo=%s puntaje=%s", p.name, cls["type"], ev["score"])
-    return {"plan": rows, "classification": cls, "evaluation": ev, "devices": configs.build_devices(p, rows, cls)}
+    devices = configs.build_devices(p, rows, cls)
+    # Ciberdefensa integrada: cada configuración generada se audita antes de entregarla
+    security = {name: audit(cfg)["counts"] for name, cfg in devices.items()}
+    return {"plan": rows, "classification": cls, "evaluation": ev, "devices": devices, "security": security}
 
 
 @app.get("/api/health")
@@ -62,3 +67,14 @@ def export_docx(p: Project) -> Response:
 def validate_topology(t: Topology) -> dict:
     """Valida una topología importada (formato, nombres, IPs, enlaces) y devuelve advertencias de diseño."""
     return {"devices": len(t.devices), "links": len(t.links), "warnings": analyze_topology(t)}
+
+
+class ConfigText(BaseModel):
+    """Configuración pegada por el usuario (límite de tamaño para evitar abusos)."""
+    text: str = Field(max_length=200_000)
+
+
+@app.post("/api/security/audit")
+def security_audit(c: ConfigText) -> dict:
+    """Advierte ajustes inseguros en una configuración de cualquier marca; los secretos se devuelven enmascarados."""
+    return audit(c.text)

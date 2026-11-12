@@ -26,6 +26,20 @@ Ejecutadas con `cd backend && pytest -v` (resultado real, se repite en la susten
 - [P16] no habilita telnet ni http cisco -> OK
 - [P17] excel tiene hojas vlsm -> OK
 - [P18] docx valido -> OK
+- [P27] detecta telnet -> OK
+- [P28] no marca telnet desactivado -> OK
+- [P29] detecta http y no marca no http -> OK
+- [P30] detecta snmp v2c -> OK
+- [P31] detecta secreto y lo enmascara -> OK
+- [P32] acepta marcadores cambiar -> OK
+- [P33] detecta acl abierta y ssh v1 -> OK
+- [P34] advierte si no hay ssh -> OK
+- [P35] configs generadas no tienen hallazgos altos[cisco] -> OK
+- [P35] configs generadas no tienen hallazgos altos[huawei] -> OK
+- [P35] configs generadas no tienen hallazgos altos[fortinet] -> OK
+- [P35] configs generadas no tienen hallazgos altos[mikrotik] -> OK
+- [P35] configs generadas no tienen hallazgos altos[juniper] -> OK
+- [P35] configs generadas no tienen hallazgos altos[aruba] -> OK
 - [P19] topologia valida -> OK
 - [P20] rechaza nombre repetido -> OK
 - [P21] rechaza enlace a equipo inexistente -> OK
@@ -36,9 +50,9 @@ Ejecutadas con `cd backend && pytest -v` (resultado real, se repite en la susten
 - [P26] advierte un solo core y falta isp -> OK
 
 ## Resultado
-Pruebas superadas: 31 de 31 = 100% de confianza
+Pruebas superadas: 45 de 45 = 100% de confianza
 
 ## Qué falta / errores encontrados
-- No hay pruebas automáticas de la interfaz web (index.html): la carga de topología del navegador se probó a mano.
+- No hay pruebas automáticas de la interfaz web (index.html): se probó a mano.
 - El envío real por SSH está simulado y no se prueba.
-- Las configuraciones se verifican por contenido, no se han probado en equipos reales; el porcentaje mide solo lo que está cubierto.
+- Las configuraciones se verifican por contenido y por el auditor, no se han probado en equipos reales; el porcentaje mide solo lo que está cubierto.

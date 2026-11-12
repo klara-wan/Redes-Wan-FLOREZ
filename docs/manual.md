@@ -21,12 +21,13 @@ NetPlan ayuda a diseñar una red: calcula el direccionamiento (VLSM IPv4 y /64 I
 | 05 Auditoría | Registro de acciones con fecha y usuario. |
 | 06 Agente IA | Chat por reglas: crear cliente, estado del pool, ir a topología, preparar configuración. |
 | 07 Usuarios | Crear usuarios y cambiar de sesión; historial de sesiones. |
+| 09 Seguridad | Pega una configuración y la herramienta advierte Telnet, HTTP, SNMP v2c, claves incrustadas y ACL abiertas (secretos enmascarados). Requiere el backend. |
 | 08 Proyecto | Con el backend encendido: clasifica la red, calcula el porcentaje de éxito, lista mejoras, muestra los comandos de cada equipo y descarga Excel y Word. |
 
 ## 4. Paso a paso: de los datos a los comandos
 1. En **Sedes (VLSM)** escribe el nombre, el bloque base y los pisos con sus usuarios; pulsa **Calcular direccionamiento VLSM**.
 2. Revisa la tabla: red, prefijo, máscara, primera/última IP, broadcast, hosts útiles e IPv6.
-3. En **Proyecto** elige la sede, la marca (Cisco, MikroTik, Huawei, Juniper, Aruba) y la versión; marca si hay redundancia o ISP redundante y el crecimiento esperado.
+3. En **Proyecto** elige la sede, la marca (Cisco, MikroTik, Huawei, Fortinet, Juniper, Aruba) y la versión; marca si hay redundancia o ISP redundante y el crecimiento esperado.
 4. Pulsa **Analizar proyecto**. Elige un equipo (CORE, DIST, ACC-...) para ver sus comandos.
 5. Descarga el Excel (tablas VLSM y evaluación) y el Word (explicación de la infraestructura).
 
@@ -52,7 +53,7 @@ Parte de 100% y resta por cada debilidad (sin redundancia, un solo ISP, sin marg
 ## 9. Limitaciones actuales
 - El envío por SSH está simulado: los comandos se copian y se pegan a mano.
 - Los roles de usuario son informativos; no hay inicio de sesión real.
-- La marca Fortinet en la interfaz web está pendiente (sí se genera en el backend).
+- Fortinet se genera desde la pestaña Proyecto (usa el backend); la pestaña Configuración, que funciona sin backend, ofrece las otras cinco marcas.
 
 ## 10. Formato de la topología
 ```json
@@ -62,3 +63,6 @@ Parte de 100% y resta por cada debilidad (sin redundancia, un solo ISP, sin marg
 - Roles: isp, firewall, router, core, distribution, access, server. Tipos de enlace: wan, lan, trunk.
 - Nombres: solo letras, números, `-` y `_` (máx. 30). No se permiten nombres ni enlaces repetidos, ni enlaces a equipos que no existen.
 - Si algo es inválido, la herramienta muestra el motivo y no dibuja nada. Las advertencias (equipo aislado, un solo core, sin ISP) no bloquean la carga.
+
+## 11. Auditoría de seguridad automática
+Al analizar un proyecto, cada configuración generada se audita y la pestaña Proyecto muestra "Auditoría de seguridad del equipo: sin hallazgos" o el número de hallazgos. La pestaña **Seguridad** audita cualquier configuración pegada: pulsa "Cargar ejemplo inseguro" y "Auditar configuración" para ver las advertencias.
