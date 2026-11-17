@@ -9,7 +9,7 @@ Calcula subnetting VLSM (IPv4/IPv6), genera configuraciones por equipo para Cisc
 2. Frontend: abrir `index.html` en el navegador; la pestaña "Proyecto" usa el backend.
 
 ## Pruebas y porcentaje de confianza (Corte 3)
-- Pruebas superadas: 23 de 23 = 100% (ver docs/pruebas.md). Correr: `cd backend && pytest -v`
+- Pruebas superadas: 45 de 45 = 100% (ver docs/pruebas.md). Correr: `cd backend && pytest -v`
 
 ## Documentos
 - docs/informe-corte2.pdf · docs/informe-corte3.pdf
@@ -22,8 +22,8 @@ docs/capturas/ (01-subnetting.png ... 10-app-final.png)
 | Criterio | ¿Cumplido? | Evidencia |
 |---|---|---|
 | Subnetting funciona | Sí | 01-subnetting.png |
-| Carga de topología | No (pendiente) | 02-topologia.png |
+| Carga de topología | Sí | 02-topologia.png |
 | Config Cisco y Huawei | Sí | 03 / 04 |
 | Config Fortinet y MikroTik (C3) | Sí | 06 / 07 |
-| Ciberdefensa (politicas-ia.md) | Parcial | 08-ciberdefensa.png |
+| Ciberdefensa (politicas-ia.md) | Sí | 08-ciberdefensa.png |
 | Pruebas con porcentaje de confianza (C3) | Sí | docs/pruebas.md |
